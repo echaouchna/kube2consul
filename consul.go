@@ -42,7 +42,7 @@ func (k2c *kube2consul) registerEndpoint(e Endpoint) error {
 	service := &consulapi.AgentService{
 		Service: e.Name,
 		Port:    int(e.Port),
-		Tags:    []string{opts.consulTag},
+		Tags:    append([]string{opts.consulTag}, e.Tags...),
 	}
 
 	reg := &consulapi.CatalogRegistration{

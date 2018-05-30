@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"strings"
+
 	"k8s.io/client-go/pkg/api/v1"
 )
 
@@ -11,11 +13,23 @@ type Endpoint struct {
 	Address string
 	Port    int32
 	RefName string
+	Tags    []string
 }
 
 // NewEndpoint allows to create Endpoint
-func NewEndpoint(name, address string, port int32, refName string) Endpoint {
-	return Endpoint{name, address, port, refName}
+func NewEndpoint(name, address string, port int32, refName string, tags []string) Endpoint {
+	return Endpoint{name, address, port, refName, tags}
+}
+
+func parseConsulLabels(labels map[string]string) (tagsArray []string) {
+	consulPrefix := "consul_"
+	for key, value := range labels {
+		if strings.HasPrefix(key, consulPrefix) {
+			tagKey := strings.Replace(key, consulPrefix, "", -1)
+			tagsArray = append(tagsArray, tagKey+"="+value)
+		}
+	}
+	return
 }
 
 func generateEntries(endpoint *v1.Endpoints) []Endpoint {
@@ -30,7 +44,7 @@ func generateEntries(endpoint *v1.Endpoints) []Endpoint {
 				refName = addr.TargetRef.Name
 			}
 			for _, port := range subset.Ports {
-				eps = append(eps, NewEndpoint(endpoint.Name, addr.IP, port.Port, refName))
+				eps = append(eps, NewEndpoint(endpoint.Name, addr.IP, port.Port, refName, parseConsulLabels(endpoint.Labels)))
 			}
 		}
 	}
