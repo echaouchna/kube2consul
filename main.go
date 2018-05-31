@@ -16,7 +16,6 @@ import (
 
 	consulapi "github.com/hashicorp/consul/api"
 
-	"k8s.io/client-go/pkg/api/v1"
 	kcache "k8s.io/client-go/tools/cache"
 
 	health "github.com/docker/go-healthcheck"
@@ -58,44 +57,6 @@ func init() {
 	flag.StringVar(&opts.lockKey, "lock-key", "locks/kube2consul/.lock", "Key used for locking")
 	flag.BoolVar(&opts.noHealth, "no-health", false, "Disable endpoint /health on port 8080")
 	flag.StringVar(&opts.consulTag, "consul-tag", "kube2consul", "Tag setted on services to identify services managed by kube2consul in Consul")
-}
-
-func inSlice(value string, slice []string) bool {
-	for _, s := range slice {
-		if s == value {
-			return true
-		}
-	}
-	return false
-}
-
-func (k2c *kube2consul) RemoveDNSGarbage() {
-	epSet := make(map[string]struct{})
-
-	for _, obj := range k2c.endpointsStore.List() {
-		if ep, ok := obj.(*v1.Endpoints); ok {
-			epSet[ep.Name] = struct{}{}
-		}
-	}
-
-	services, _, err := k2c.consulCatalog.Services(nil)
-	if err != nil {
-		glog.Errorf("Cannot remove DNS garbage: %v", err)
-		return
-	}
-
-	for name, tags := range services {
-		if !inSlice(opts.consulTag, tags) {
-			continue
-		}
-
-		if _, ok := epSet[name]; !ok {
-			err = k2c.removeDeletedEndpoints(name, []Endpoint{})
-			if err != nil {
-				glog.Errorf("Error removing DNS garbage: %v", err)
-			}
-		}
-	}
 }
 
 func consulCheck() error {
@@ -181,8 +142,6 @@ func main() {
 
 	for {
 		select {
-		case <-time.NewTicker(time.Duration(opts.resyncPeriod) * time.Second).C:
-			k2c.RemoveDNSGarbage()
 		case <-lockCh:
 			glog.Fatalf("Lost lock, Exting")
 		case sig := <-sigs:

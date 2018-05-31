@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"k8s.io/client-go/pkg/api/v1"
@@ -16,15 +17,22 @@ type Endpoint struct {
 	Tags    []string
 }
 
+var (
+	consulPrefix      = "consul_"
+	serviceNameSuffix = "NAME"
+	servicePrefix     = "SERVICE"
+	ignoreSuffix      = "IGNORE"
+	separator         = "_"
+)
+
 // NewEndpoint allows to create Endpoint
 func NewEndpoint(name, address string, port int32, refName string, tags []string) Endpoint {
 	return Endpoint{name, address, port, refName, tags}
 }
 
 func parseConsulLabels(labels map[string]string) (tagsArray []string) {
-	consulPrefix := "consul_"
 	for key, value := range labels {
-		if strings.HasPrefix(key, consulPrefix) {
+		if strings.HasPrefix(key, consulPrefix+separator) && !strings.HasPrefix(key, consulPrefix+separator+servicePrefix) {
 			tagKey := strings.Replace(key, consulPrefix, "", -1)
 			tagsArray = append(tagsArray, tagKey+"="+value)
 		}
@@ -32,35 +40,75 @@ func parseConsulLabels(labels map[string]string) (tagsArray []string) {
 	return
 }
 
-func generateEntries(endpoint *v1.Endpoints) []Endpoint {
+func generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map[string][]Endpoint) {
 	var (
-		eps     []Endpoint
-		refName string
+		eps                 []Endpoint
+		refName             string
+		registerService     = false
+		perServiceEndpoints = make(map[string][]Endpoint)
 	)
 
-	for _, subset := range endpoint.Subsets {
-		for _, addr := range subset.Addresses {
-			if addr.TargetRef != nil {
-				refName = addr.TargetRef.Name
+	for key := range endpoint.Labels {
+		if strings.HasPrefix(key, consulPrefix) && strings.HasSuffix(key, serviceNameSuffix) {
+			registerService = true
+			break
+		}
+	}
+
+	regitratorLabelPrefix := consulPrefix + servicePrefix + separator
+	ignoreEntireService := false
+	if _, ok := endpoint.Labels[regitratorLabelPrefix+ignoreSuffix]; ok {
+		ignoreEntireService = true
+	}
+
+	if registerService && !ignoreEntireService {
+		for _, subset := range endpoint.Subsets {
+			appendPort := false
+			if len(subset.Ports) > 1 {
+				appendPort = true
 			}
 			for _, port := range subset.Ports {
-				eps = append(eps, NewEndpoint(endpoint.Name, addr.IP, port.Port, refName, parseConsulLabels(endpoint.Labels)))
+				servicePort := strconv.Itoa((int)(port.Port))
+				serviceName := endpoint.Name
+				if _, ok := endpoint.Labels[regitratorLabelPrefix+servicePort+separator+ignoreSuffix]; ok {
+					continue
+				}
+				if nameLabelValue, ok := endpoint.Labels[regitratorLabelPrefix+serviceNameSuffix]; ok {
+					serviceName = nameLabelValue
+				}
+				if appendPort {
+					serviceName = serviceName + "_" + servicePort
+				}
+				if nameLabelValue, ok := endpoint.Labels[regitratorLabelPrefix+servicePort+separator+serviceNameSuffix]; ok {
+					serviceName = nameLabelValue
+				}
+				for _, addr := range subset.Addresses {
+					if addr.TargetRef != nil {
+						refName = addr.TargetRef.Name
+					}
+					newEndpoint := NewEndpoint(serviceName, addr.IP, port.Port, refName, parseConsulLabels(endpoint.Labels))
+					eps = append(eps, newEndpoint)
+					perServiceEndpoints[serviceName] = append(perServiceEndpoints[serviceName], newEndpoint)
+				}
 			}
 		}
 	}
 
-	return eps
+	return eps, perServiceEndpoints
 }
 
 func (k2c *kube2consul) updateEndpoints(ep *v1.Endpoints) error {
-	endpoints := generateEntries(ep)
+	endpoints, perServiceEndpoints := generateEntries(ep)
 	for _, e := range endpoints {
 		if err := k2c.registerEndpoint(e); err != nil {
 			return fmt.Errorf("Error updating endpoints %v: %v", ep.Name, err)
 		}
 	}
-	if err := k2c.removeDeletedEndpoints(ep.Name, endpoints); err != nil {
-		return fmt.Errorf("Error removing possible deleted endpoints: %v", err)
+
+	for serviceName, e := range perServiceEndpoints {
+		if err := k2c.removeDeletedEndpoints(serviceName, e); err != nil {
+			return fmt.Errorf("Error removing possible deleted endpoints: %v: %v", serviceName, err)
+		}
 	}
 	return nil
 }
