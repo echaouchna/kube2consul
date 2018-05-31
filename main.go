@@ -88,7 +88,6 @@ func (k2c *kube2consul) RemoveDNSGarbage() {
 	}
 
 	for name, tags := range services {
-		fmt.Println("RemoveDNSGarbage " + name)
 		if !inSlice(opts.consulTag, tags) {
 			continue
 		}

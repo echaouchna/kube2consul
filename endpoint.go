@@ -32,7 +32,7 @@ func NewEndpoint(name, address string, port int32, refName string, tags []string
 
 func parseConsulLabels(labels map[string]string) (tagsArray []string) {
 	for key, value := range labels {
-		if strings.HasPrefix(key, consulPrefix+separator) && !strings.HasPrefix(key, consulPrefix+separator+servicePrefix) {
+		if strings.HasPrefix(key, consulPrefix) && !strings.HasPrefix(key, consulPrefix+servicePrefix) {
 			tagKey := strings.Replace(key, consulPrefix, "", -1)
 			tagsArray = append(tagsArray, tagKey+"="+value)
 		}

@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"reflect"
+	"sort"
 
 	"github.com/golang/glog"
 	consulapi "github.com/hashicorp/consul/api"
@@ -34,7 +36,7 @@ func (k2c *kube2consul) registerEndpoint(e Endpoint) error {
 	}
 
 	for _, service := range consulServices {
-		if endpointExists(service.Node, service.Address, service.ServicePort, []Endpoint{e}) {
+		if endpointExistsCheckTags(service.Node, service.Address, service.ServicePort, service.ServiceTags, []Endpoint{e}, true) {
 			return nil
 		}
 	}
@@ -61,8 +63,17 @@ func (k2c *kube2consul) registerEndpoint(e Endpoint) error {
 }
 
 func endpointExists(refName, address string, port int, endpoints []Endpoint) bool {
+	return endpointExistsCheckTags(refName, address, port, nil, endpoints, false)
+}
+
+func endpointExistsCheckTags(refName, address string, port int, tags []string, endpoints []Endpoint, checkTags bool) bool {
 	for _, e := range endpoints {
 		if e.RefName == refName && e.Address == address && int(e.Port) == port {
+			sort.Strings(tags)
+			sort.Strings(e.Tags)
+			if checkTags && !reflect.DeepEqual(tags, e.Tags) {
+				return false
+			}
 			return true
 		}
 	}
