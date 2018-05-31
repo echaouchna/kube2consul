@@ -40,7 +40,7 @@ func parseConsulLabels(labels map[string]string) (tagsArray []string) {
 	return
 }
 
-func generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map[string][]Endpoint) {
+func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map[string][]Endpoint) {
 	var (
 		eps                 []Endpoint
 		refName             string
@@ -98,7 +98,7 @@ func generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map[string][]Endpoint)
 }
 
 func (k2c *kube2consul) updateEndpoints(ep *v1.Endpoints) error {
-	endpoints, perServiceEndpoints := generateEntries(ep)
+	endpoints, perServiceEndpoints := k2c.generateEntries(ep)
 	for _, e := range endpoints {
 		if err := k2c.registerEndpoint(e); err != nil {
 			return fmt.Errorf("Error updating endpoints %v: %v", ep.Name, err)
