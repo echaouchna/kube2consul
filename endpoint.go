@@ -30,12 +30,21 @@ func NewEndpoint(name, address string, port int32, refName string, tags []string
 	return Endpoint{name, address, port, refName, tags}
 }
 
-func parseConsulLabels(labels map[string]string) (tagsArray []string) {
+func appendTag(tagsArray []string, key string, value string, prefix string) []string {
+	if strings.HasPrefix(key, prefix) {
+		tagKey := strings.Replace(key, prefix, "", -1)
+		tagsArray = append(tagsArray, tagKey+"="+value)
+	}
+	return tagsArray
+}
+
+func parseConsulLabels(labels map[string]string, port string) (tagsArray []string) {
 	for key, value := range labels {
-		if strings.HasPrefix(key, consulPrefix) && !strings.HasPrefix(key, consulPrefix+servicePrefix) {
-			tagKey := strings.Replace(key, consulPrefix, "", -1)
-			tagsArray = append(tagsArray, tagKey+"="+value)
+		if strings.HasPrefix(key, consulPrefix+servicePrefix) {
+			continue
 		}
+		tagsArray = appendTag(tagsArray, key, value, consulPrefix)
+		tagsArray = appendTag(tagsArray, key, value, consulPrefix+port+separator)
 	}
 	return
 }
@@ -86,7 +95,7 @@ func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map
 					if addr.TargetRef != nil {
 						refName = addr.TargetRef.Name
 					}
-					newEndpoint := NewEndpoint(serviceName, addr.IP, port.Port, refName, parseConsulLabels(endpoint.Labels))
+					newEndpoint := NewEndpoint(serviceName, addr.IP, port.Port, refName, parseConsulLabels(endpoint.Labels, servicePort))
 					eps = append(eps, newEndpoint)
 					perServiceEndpoints[serviceName] = append(perServiceEndpoints[serviceName], newEndpoint)
 				}
