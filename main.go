@@ -45,6 +45,7 @@ type cliOpts struct {
 	lockKey      string
 	noHealth     bool
 	consulTag    string
+	explicit     bool
 }
 
 func init() {
@@ -57,6 +58,7 @@ func init() {
 	flag.BoolVar(&opts.lock, "lock", false, "Acquires a lock with consul to ensure that only one instance of kube2consul is running")
 	flag.StringVar(&opts.lockKey, "lock-key", "locks/kube2consul/.lock", "Key used for locking")
 	flag.BoolVar(&opts.noHealth, "no-health", false, "Disable endpoint /health on port 8080")
+	flag.BoolVar(&opts.explicit, "explicit", false, "Only register containers which have SERVICE_NAME label set")
 	flag.StringVar(&opts.consulTag, "consul-tag", "kube2consul", "Tag setted on services to identify services managed by kube2consul in Consul")
 }
 

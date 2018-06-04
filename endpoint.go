@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"k8s.io/client-go/pkg/api/v1"
 )
@@ -18,7 +17,6 @@ type Endpoint struct {
 }
 
 var (
-	consulPrefix      = "consul_"
 	serviceNameSuffix = "NAME"
 	servicePrefix     = "SERVICE"
 	ignoreSuffix      = "IGNORE"
@@ -30,75 +28,44 @@ func NewEndpoint(name, address string, port int32, refName string, tags []string
 	return Endpoint{name, address, port, refName, tags}
 }
 
-func appendTag(tagsArray []string, key string, value string, prefix string) []string {
-	if strings.HasPrefix(key, prefix) {
-		tagKey := strings.Replace(key, prefix, "", -1)
-		tagsArray = append(tagsArray, tagKey+"="+value)
-	}
-	return tagsArray
-}
-
-func parseConsulLabels(labels map[string]string, port string) (tagsArray []string) {
-	for key, value := range labels {
-		if strings.HasPrefix(key, consulPrefix+servicePrefix) {
-			continue
-		}
-		tagsArray = appendTag(tagsArray, key, value, consulPrefix)
-		tagsArray = appendTag(tagsArray, key, value, consulPrefix+port+separator)
-	}
-	return
-}
-
 func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map[string][]Endpoint) {
 	var (
 		eps                 []Endpoint
 		refName             string
-		registerService     = false
 		perServiceEndpoints = make(map[string][]Endpoint)
 	)
 
-	for key := range endpoint.Labels {
-		if strings.HasPrefix(key, consulPrefix) && strings.HasSuffix(key, serviceNameSuffix) {
-			registerService = true
-			break
-		}
-	}
+	for _, subset := range endpoint.Subsets {
+		for _, port := range subset.Ports {
+			servicePort := strconv.Itoa((int)(port.Port))
+			metadata, _ := serviceMetaData(endpoint, servicePort)
 
-	regitratorLabelPrefix := consulPrefix + servicePrefix + separator
-	ignoreEntireService := false
-	if _, ok := endpoint.Labels[regitratorLabelPrefix+ignoreSuffix]; ok {
-		ignoreEntireService = true
-	}
-
-	if registerService && !ignoreEntireService {
-		for _, subset := range endpoint.Subsets {
-			appendPort := false
-			if len(subset.Ports) > 1 {
-				appendPort = true
+			ignore := mapDefault(metadata, "ignore", "")
+			if ignore != "" {
+				continue
 			}
-			for _, port := range subset.Ports {
-				servicePort := strconv.Itoa((int)(port.Port))
-				serviceName := endpoint.Name
-				if _, ok := endpoint.Labels[regitratorLabelPrefix+servicePort+separator+ignoreSuffix]; ok {
+			delete(metadata, "ignore")
+
+			serviceName := mapDefault(metadata, "name", "")
+			if serviceName == "" {
+				if opts.explicit {
 					continue
 				}
-				if nameLabelValue, ok := endpoint.Labels[regitratorLabelPrefix+serviceNameSuffix]; ok {
-					serviceName = nameLabelValue
+				serviceName = endpoint.Name
+			}
+			delete(metadata, "name")
+
+			labels := parseLabels(metadata)
+
+			fmt.Println(serviceName)
+
+			for _, addr := range subset.Addresses {
+				if addr.TargetRef != nil {
+					refName = addr.TargetRef.Name
 				}
-				if appendPort {
-					serviceName = serviceName + "_" + servicePort
-				}
-				if nameLabelValue, ok := endpoint.Labels[regitratorLabelPrefix+servicePort+separator+serviceNameSuffix]; ok {
-					serviceName = nameLabelValue
-				}
-				for _, addr := range subset.Addresses {
-					if addr.TargetRef != nil {
-						refName = addr.TargetRef.Name
-					}
-					newEndpoint := NewEndpoint(serviceName, addr.IP, port.Port, refName, parseConsulLabels(endpoint.Labels, servicePort))
-					eps = append(eps, newEndpoint)
-					perServiceEndpoints[serviceName] = append(perServiceEndpoints[serviceName], newEndpoint)
-				}
+				newEndpoint := NewEndpoint(serviceName, addr.IP, port.Port, refName, labels)
+				eps = append(eps, newEndpoint)
+				perServiceEndpoints[serviceName] = append(perServiceEndpoints[serviceName], newEndpoint)
 			}
 		}
 	}
