@@ -16,13 +16,6 @@ type Endpoint struct {
 	Tags    []string
 }
 
-var (
-	serviceNameSuffix = "NAME"
-	servicePrefix     = "SERVICE"
-	ignoreSuffix      = "IGNORE"
-	separator         = "_"
-)
-
 // NewEndpoint allows to create Endpoint
 func NewEndpoint(name, address string, port int32, refName string, tags []string) Endpoint {
 	return Endpoint{name, address, port, refName, tags}
@@ -44,7 +37,6 @@ func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map
 			if ignore != "" {
 				continue
 			}
-			delete(metadata, "ignore")
 
 			serviceName := mapDefault(metadata, "name", "")
 			if serviceName == "" {
@@ -53,17 +45,12 @@ func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map
 				}
 				serviceName = endpoint.Name
 			}
-			delete(metadata, "name")
-
-			labels := parseLabels(metadata)
-
-			fmt.Println(serviceName)
 
 			for _, addr := range subset.Addresses {
 				if addr.TargetRef != nil {
 					refName = addr.TargetRef.Name
 				}
-				newEndpoint := NewEndpoint(serviceName, addr.IP, port.Port, refName, labels)
+				newEndpoint := NewEndpoint(serviceName, addr.IP, port.Port, refName, tagsToArray(metadata["tags"]))
 				eps = append(eps, newEndpoint)
 				perServiceEndpoints[serviceName] = append(perServiceEndpoints[serviceName], newEndpoint)
 			}
