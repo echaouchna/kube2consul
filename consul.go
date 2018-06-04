@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"time"
 
 	"github.com/golang/glog"
 	consulapi "github.com/hashicorp/consul/api"
@@ -51,6 +52,34 @@ func (k2c *kube2consul) registerEndpoint(e Endpoint) error {
 		Node:    e.RefName,
 		Address: e.Address,
 		Service: service,
+	}
+
+	if e.HealthCheck != nil {
+		inteval, intervalErr := time.ParseDuration(e.HealthCheck.Interval)
+		timeout, timeoutErr := time.ParseDuration(e.HealthCheck.Timeout)
+
+		if intervalErr == nil && timeoutErr == nil {
+			intevalReadableDuration := consulapi.NewReadableDuration(inteval)
+			timeoutReadableDuration := consulapi.NewReadableDuration(timeout)
+
+			healthCheckDefinition := &consulapi.HealthCheckDefinition{
+				HTTP:     e.HealthCheck.URL,
+				Interval: *intevalReadableDuration,
+				Timeout:  *timeoutReadableDuration,
+			}
+
+			checkAgent := &consulapi.AgentCheck{
+				CheckID:     e.RefName,
+				Name:        e.RefName,
+				Node:        e.RefName,
+				Definition:  *healthCheckDefinition,
+				ServiceName: e.Name,
+			}
+
+			reg.Check = checkAgent
+		} else {
+			glog.Errorf("Error parsing healthcheck fo service %v (%v, %v): %v, %v", e.Name, e.RefName, e.Address, intervalErr, timeoutErr)
+		}
 	}
 
 	_, err = k2c.consulCatalog.Register(reg, nil)

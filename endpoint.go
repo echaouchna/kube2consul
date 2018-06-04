@@ -9,16 +9,43 @@ import (
 
 // Endpoint is a summary of kubernetes endpoint
 type Endpoint struct {
-	Name    string
-	Address string
-	Port    int32
-	RefName string
-	Tags    []string
+	Name        string
+	Address     string
+	Port        int32
+	RefName     string
+	Tags        []string
+	HealthCheck *HealthCheck
+}
+
+// HealthCheck is summary of kubernetes health check definition
+type HealthCheck struct {
+	URL      string
+	Interval string
+	Timeout  string
 }
 
 // NewEndpoint allows to create Endpoint
-func NewEndpoint(name, address string, port int32, refName string, tags []string) Endpoint {
-	return Endpoint{name, address, port, refName, tags}
+func NewEndpoint(name, address string, port int32, refName string, tags []string, healthCheck *HealthCheck) Endpoint {
+	return Endpoint{name, address, port, refName, tags, healthCheck}
+}
+
+func newHealthCheck(metadata map[string]string, ipAddress string, port string) *HealthCheck {
+	url := ""
+	nodeURL := ipAddress + ":" + port + "/"
+	if val, ok := metadata["check_https"]; ok {
+		url = "https://" + nodeURL + val
+	} else if val, ok := metadata["check_http"]; ok {
+		url = "http://" + nodeURL + val
+	}
+	if url == "" {
+		return nil
+	}
+
+	return &HealthCheck{
+		url,
+		mapDefault(metadata, "check_interval", "15s"),
+		mapDefault(metadata, "check_timeout", "15s"),
+	}
 }
 
 func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map[string][]Endpoint) {
@@ -50,7 +77,8 @@ func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map
 				if addr.TargetRef != nil {
 					refName = addr.TargetRef.Name
 				}
-				newEndpoint := NewEndpoint(serviceName, addr.IP, port.Port, refName, tagsToArray(metadata["tags"]))
+				healthCheck := newHealthCheck(metadata, addr.IP, servicePort)
+				newEndpoint := NewEndpoint(serviceName, addr.IP, port.Port, refName, tagsToArray(metadata["tags"]), healthCheck)
 				eps = append(eps, newEndpoint)
 				perServiceEndpoints[serviceName] = append(perServiceEndpoints[serviceName], newEndpoint)
 			}
