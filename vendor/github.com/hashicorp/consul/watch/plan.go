@@ -62,7 +62,7 @@ OUTER:
 			if retry > maxBackoffTime {
 				retry = maxBackoffTime
 			}
-			logger.Printf("consul.watch: Watch (type: %s) errored: %v, retry in %v",
+			logger.Printf("[ERR] consul.watch: Watch (type: %s) errored: %v, retry in %v",
 				p.Type, err, retry)
 			select {
 			case <-time.After(retry):
@@ -107,6 +107,9 @@ func (p *Plan) Stop() {
 		return
 	}
 	p.stop = true
+	if p.cancelFunc != nil {
+		p.cancelFunc()
+	}
 	close(p.stopCh)
 }
 

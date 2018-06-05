@@ -18,6 +18,8 @@ Enabling gossip encryption only requires that you set an encryption key when
 starting the Consul agent. The key can be set via the `encrypt` parameter: the
 value of this setting is a configuration file containing the encryption key.
 
+~> **WAN Joined Datacenters Note:** If using multiple WAN joined datacenters, be sure to use _the same encryption key_ in all datacenters.
+
 The key must be 16-bytes, Base64 encoded. As a convenience, Consul provides the
 [`consul keygen`](/docs/commands/keygen.html) command to generate a
 cryptographically suitable key:
@@ -123,8 +125,11 @@ options are set to `false`. HTTPS for the API can be enabled at this point by
 setting the [`https`](/docs/agent/options.html#http_port) port.
 2. Perform a rolling restart of each agent in the cluster. After this step, TLS should be enabled
 everywhere but the agents will not yet be enforcing TLS.
-3. Change the `verify_incoming` and `verify_outgoing` settings (as well as `verify_server_hostname`
+3. (Optional, Enterprise-only) If applicable, set the `UseTLS` setting in any network areas to `true`.
+This can be done either through the [`consul operator area update`](/docs/commands/operator/area.html)
+command or the [Operator API](/api/operator/area.html).
+4. Change the `verify_incoming` and `verify_outgoing` settings (as well as `verify_server_hostname`
 if applicable) to `true`.
-4. Perform another rolling restart of each agent in the cluster.
+5. Perform another rolling restart of each agent in the cluster.
 
 At this point, full TLS encryption for RPC communication should be enabled.

@@ -5,8 +5,9 @@ import (
 	"time"
 
 	"github.com/armon/go-metrics"
+	"github.com/hashicorp/consul/acl"
 	"github.com/hashicorp/consul/agent/consul/state"
-	"github.com/hashicorp/consul/agent/consul/structs"
+	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/ipaddr"
 	"github.com/hashicorp/consul/types"
 	"github.com/hashicorp/go-memdb"
@@ -23,11 +24,14 @@ func (c *Catalog) Register(args *structs.RegisterRequest, reply *struct{}) error
 	if done, err := c.srv.forward("Catalog.Register", args, args, reply); done {
 		return err
 	}
-	defer metrics.MeasureSince([]string{"consul", "catalog", "register"}, time.Now())
+	defer metrics.MeasureSince([]string{"catalog", "register"}, time.Now())
 
 	// Verify the args.
-	if args.Node == "" || args.Address == "" {
-		return fmt.Errorf("Must provide node and address")
+	if args.Node == "" {
+		return fmt.Errorf("Must provide node")
+	}
+	if args.Address == "" && !args.SkipNodeUpdate {
+		return fmt.Errorf("Must provide address if SkipNodeUpdate is not set")
 	}
 	if args.ID != "" {
 		if _, err := uuid.ParseUUID(string(args.ID)); err != nil {
@@ -36,7 +40,7 @@ func (c *Catalog) Register(args *structs.RegisterRequest, reply *struct{}) error
 	}
 
 	// Fetch the ACL token, if any.
-	acl, err := c.srv.resolveToken(args.Token)
+	rule, err := c.srv.resolveToken(args.Token)
 	if err != nil {
 		return err
 	}
@@ -54,7 +58,7 @@ func (c *Catalog) Register(args *structs.RegisterRequest, reply *struct{}) error
 		}
 
 		// Check the service address here and in the agent endpoint
-		// since service registration isn't sychronous.
+		// since service registration isn't synchronous.
 		if ipaddr.IsAny(args.Service.Address) {
 			return fmt.Errorf("Invalid service address")
 		}
@@ -64,9 +68,9 @@ func (c *Catalog) Register(args *structs.RegisterRequest, reply *struct{}) error
 		// is going away after version 0.8). We check this same policy
 		// later if version 0.8 is enabled, so we can eventually just
 		// delete this and do all the ACL checks down there.
-		if args.Service.Service != ConsulServiceName {
-			if acl != nil && !acl.ServiceWrite(args.Service.Service) {
-				return errPermissionDenied
+		if args.Service.Service != structs.ConsulServiceName {
+			if rule != nil && !rule.ServiceWrite(args.Service.Service, nil) {
+				return acl.ErrPermissionDenied
 			}
 		}
 	}
@@ -86,13 +90,13 @@ func (c *Catalog) Register(args *structs.RegisterRequest, reply *struct{}) error
 	}
 
 	// Check the complete register request against the given ACL policy.
-	if acl != nil && c.srv.config.ACLEnforceVersion8 {
+	if rule != nil && c.srv.config.ACLEnforceVersion8 {
 		state := c.srv.fsm.State()
 		_, ns, err := state.NodeServices(nil, args.Node)
 		if err != nil {
 			return fmt.Errorf("Node lookup failed: %v", err)
 		}
-		if err := vetRegisterWithACL(acl, args, ns); err != nil {
+		if err := vetRegisterWithACL(rule, args, ns); err != nil {
 			return err
 		}
 	}
@@ -112,7 +116,7 @@ func (c *Catalog) Deregister(args *structs.DeregisterRequest, reply *struct{}) e
 	if done, err := c.srv.forward("Catalog.Deregister", args, args, reply); done {
 		return err
 	}
-	defer metrics.MeasureSince([]string{"consul", "catalog", "deregister"}, time.Now())
+	defer metrics.MeasureSince([]string{"catalog", "deregister"}, time.Now())
 
 	// Verify the args
 	if args.Node == "" {
@@ -120,13 +124,13 @@ func (c *Catalog) Deregister(args *structs.DeregisterRequest, reply *struct{}) e
 	}
 
 	// Fetch the ACL token, if any.
-	acl, err := c.srv.resolveToken(args.Token)
+	rule, err := c.srv.resolveToken(args.Token)
 	if err != nil {
 		return err
 	}
 
 	// Check the complete deregister request against the given ACL policy.
-	if acl != nil && c.srv.config.ACLEnforceVersion8 {
+	if rule != nil && c.srv.config.ACLEnforceVersion8 {
 		state := c.srv.fsm.State()
 
 		var ns *structs.NodeService
@@ -145,9 +149,10 @@ func (c *Catalog) Deregister(args *structs.DeregisterRequest, reply *struct{}) e
 			}
 		}
 
-		if err := vetDeregisterWithACL(acl, args, ns, nc); err != nil {
+		if err := vetDeregisterWithACL(rule, args, ns, nc); err != nil {
 			return err
 		}
+
 	}
 
 	if _, err := c.srv.raftApply(structs.DeregisterRequestType, args); err != nil {
@@ -161,6 +166,10 @@ func (c *Catalog) ListDatacenters(args *struct{}, reply *[]string) error {
 	dcs, err := c.srv.router.GetDatacentersByDistance()
 	if err != nil {
 		return err
+	}
+
+	if len(dcs) == 0 { // no WAN federation, so return the local data center name
+		dcs = []string{c.srv.config.Datacenter}
 	}
 
 	*reply = dcs
@@ -268,12 +277,15 @@ func (c *Catalog) ServiceNodes(args *structs.ServiceSpecificRequest, reply *stru
 
 	// Provide some metrics
 	if err == nil {
-		metrics.IncrCounter([]string{"consul", "catalog", "service", "query", args.ServiceName}, 1)
+		metrics.IncrCounterWithLabels([]string{"catalog", "service", "query"}, 1,
+			[]metrics.Label{{Name: "service", Value: args.ServiceName}})
 		if args.ServiceTag != "" {
-			metrics.IncrCounter([]string{"consul", "catalog", "service", "query-tag", args.ServiceName, args.ServiceTag}, 1)
+			metrics.IncrCounterWithLabels([]string{"catalog", "service", "query-tag"}, 1,
+				[]metrics.Label{{Name: "service", Value: args.ServiceName}, {Name: "tag", Value: args.ServiceTag}})
 		}
 		if len(reply.ServiceNodes) == 0 {
-			metrics.IncrCounter([]string{"consul", "catalog", "service", "not-found", args.ServiceName}, 1)
+			metrics.IncrCounterWithLabels([]string{"catalog", "service", "not-found"}, 1,
+				[]metrics.Label{{Name: "service", Value: args.ServiceName}})
 		}
 	}
 	return err

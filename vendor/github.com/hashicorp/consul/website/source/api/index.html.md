@@ -9,7 +9,7 @@ description: |-
 
 # HTTP API
 
-The main interface to Consul is a RESTful HTTP API. The API can basic perform
+The main interface to Consul is a RESTful HTTP API. The API can perform basic
 CRUD operations on nodes, services, checks, configuration, and more.
 
 ## Version Prefix
@@ -32,11 +32,13 @@ by using the `X-Consul-Token` request header or the `token` query string
 parameter. The request header takes precedence over the default token, and
 the query string parameter takes precedence over everything.
 
+For more details about ACLs, please see the [ACL Guide](/docs/guides/acl.html).
+
 ## Authentication
 
 When authentication is enabled, a Consul token should be provided to API
-requests using the  `X-Consul-Token` header. This reduces the probability of the
-token accidentally getting logged or  exposed. When using authentication,
+requests using the `X-Consul-Token` header. This reduces the probability of the
+token accidentally getting logged or exposed. When using authentication,
 clients should communicate via TLS.
 
 Here is an example using `curl`:
