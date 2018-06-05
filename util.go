@@ -11,10 +11,6 @@ var (
 	knownTags = []string{
 		"name",
 		"ignore",
-		"check_http",
-		"check_https",
-		"check_interval",
-		"check_timeout",
 		"tag",
 	}
 )
