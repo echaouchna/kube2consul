@@ -1,15 +1,11 @@
 package api
 
 import (
-	"context"
-	"strings"
 	"testing"
 	"time"
-
-	"github.com/pascaldekloe/goe/verify"
 )
 
-func TestAPI_SessionCreateDestroy(t *testing.T) {
+func TestSession_CreateDestroy(t *testing.T) {
 	t.Parallel()
 	c, s := makeClient(t)
 	defer s.Stop()
@@ -39,7 +35,7 @@ func TestAPI_SessionCreateDestroy(t *testing.T) {
 	}
 }
 
-func TestAPI_SessionCreateRenewDestroy(t *testing.T) {
+func TestSession_CreateRenewDestroy(t *testing.T) {
 	t.Parallel()
 	c, s := makeClient(t)
 	defer s.Stop()
@@ -90,7 +86,7 @@ func TestAPI_SessionCreateRenewDestroy(t *testing.T) {
 	}
 }
 
-func TestAPI_SessionCreateRenewDestroyRenew(t *testing.T) {
+func TestSession_CreateRenewDestroyRenew(t *testing.T) {
 	t.Parallel()
 	c, s := makeClient(t)
 	defer s.Stop()
@@ -144,7 +140,7 @@ func TestAPI_SessionCreateRenewDestroyRenew(t *testing.T) {
 	}
 }
 
-func TestAPI_SessionCreateDestroyRenewPeriodic(t *testing.T) {
+func TestSession_CreateDestroyRenewPeriodic(t *testing.T) {
 	t.Parallel()
 	c, s := makeClient(t)
 	defer s.Stop()
@@ -198,83 +194,7 @@ func TestAPI_SessionCreateDestroyRenewPeriodic(t *testing.T) {
 	}
 }
 
-func TestAPI_SessionRenewPeriodic_Cancel(t *testing.T) {
-	t.Parallel()
-	c, s := makeClient(t)
-	defer s.Stop()
-
-	session := c.Session()
-	entry := &SessionEntry{
-		Behavior: SessionBehaviorDelete,
-		TTL:      "500s", // disable ttl
-	}
-
-	t.Run("done channel", func(t *testing.T) {
-		id, _, err := session.Create(entry, nil)
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
-
-		errCh := make(chan error, 1)
-		doneCh := make(chan struct{})
-		go func() { errCh <- session.RenewPeriodic("1s", id, nil, doneCh) }()
-
-		close(doneCh)
-
-		select {
-		case <-time.After(1 * time.Second):
-			t.Fatal("renewal loop didn't terminate")
-		case err = <-errCh:
-			if err != nil {
-				t.Fatalf("err: %v", err)
-			}
-		}
-
-		sess, _, err := session.Info(id, nil)
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
-		if sess != nil {
-			t.Fatalf("session was not expired")
-		}
-	})
-
-	t.Run("context", func(t *testing.T) {
-		id, _, err := session.Create(entry, nil)
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-		wo := new(WriteOptions).WithContext(ctx)
-
-		errCh := make(chan error, 1)
-		go func() { errCh <- session.RenewPeriodic("1s", id, wo, nil) }()
-
-		cancel()
-
-		select {
-		case <-time.After(1 * time.Second):
-			t.Fatal("renewal loop didn't terminate")
-		case err = <-errCh:
-			if err == nil || !strings.Contains(err.Error(), "context canceled") {
-				t.Fatalf("err: %v", err)
-			}
-		}
-
-		// See comment in session.go for why the session isn't removed
-		// in this case.
-		sess, _, err := session.Info(id, nil)
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
-		if sess == nil {
-			t.Fatalf("session should not be expired")
-		}
-	})
-}
-
-func TestAPI_SessionInfo(t *testing.T) {
+func TestSession_Info(t *testing.T) {
 	t.Parallel()
 	c, s := makeClient(t)
 	defer s.Stop()
@@ -291,45 +211,6 @@ func TestAPI_SessionInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if qm.LastIndex == 0 {
-		t.Fatalf("bad: %v", qm)
-	}
-	if !qm.KnownLeader {
-		t.Fatalf("bad: %v", qm)
-	}
-
-	if info.CreateIndex == 0 {
-		t.Fatalf("bad: %v", info)
-	}
-	info.CreateIndex = 0
-
-	want := &SessionEntry{
-		ID:        id,
-		Node:      s.Config.NodeName,
-		Checks:    []string{"serfHealth"},
-		LockDelay: 15 * time.Second,
-		Behavior:  SessionBehaviorRelease,
-	}
-	verify.Values(t, "", info, want)
-}
-
-func TestAPI_SessionInfo_NoChecks(t *testing.T) {
-	t.Parallel()
-	c, s := makeClient(t)
-	defer s.Stop()
-
-	session := c.Session()
-
-	id, _, err := session.CreateNoChecks(nil, nil)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	defer session.Destroy(id, nil)
-
-	info, qm, err := session.Info(id, nil)
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
 
 	if qm.LastIndex == 0 {
 		t.Fatalf("bad: %v", qm)
@@ -338,22 +219,36 @@ func TestAPI_SessionInfo_NoChecks(t *testing.T) {
 		t.Fatalf("bad: %v", qm)
 	}
 
+	if info == nil {
+		t.Fatalf("should get session")
+	}
 	if info.CreateIndex == 0 {
 		t.Fatalf("bad: %v", info)
 	}
-	info.CreateIndex = 0
-
-	want := &SessionEntry{
-		ID:        id,
-		Node:      s.Config.NodeName,
-		Checks:    []string{},
-		LockDelay: 15 * time.Second,
-		Behavior:  SessionBehaviorRelease,
+	if info.ID != id {
+		t.Fatalf("bad: %v", info)
 	}
-	verify.Values(t, "", info, want)
+	if info.Name != "" {
+		t.Fatalf("bad: %v", info)
+	}
+	if info.Node == "" {
+		t.Fatalf("bad: %v", info)
+	}
+	if len(info.Checks) == 0 {
+		t.Fatalf("bad: %v", info)
+	}
+	if info.LockDelay == 0 {
+		t.Fatalf("bad: %v", info)
+	}
+	if info.Behavior != "release" {
+		t.Fatalf("bad: %v", info)
+	}
+	if info.TTL != "" {
+		t.Fatalf("bad: %v", info)
+	}
 }
 
-func TestAPI_SessionNode(t *testing.T) {
+func TestSession_Node(t *testing.T) {
 	t.Parallel()
 	c, s := makeClient(t)
 	defer s.Stop()
@@ -388,7 +283,7 @@ func TestAPI_SessionNode(t *testing.T) {
 	}
 }
 
-func TestAPI_SessionList(t *testing.T) {
+func TestSession_List(t *testing.T) {
 	t.Parallel()
 	c, s := makeClient(t)
 	defer s.Stop()

@@ -2,11 +2,10 @@ package serf
 
 import (
 	"bytes"
+	"github.com/hashicorp/go-msgpack/codec"
 	"net"
 	"reflect"
 	"testing"
-
-	"github.com/hashicorp/go-msgpack/codec"
 )
 
 func TestQueryFlags(t *testing.T) {
@@ -67,7 +66,7 @@ func TestEncodeRelayMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if messageType != byte(messageLeaveType) {
-		t.Fatalf("bad: %v, %v", messageType, byte(messageLeaveType))
+		t.Fatal("bad: %v, %v", messageType, byte(messageLeaveType))
 	}
 
 	var message messageLeave
