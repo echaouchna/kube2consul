@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/api/core/v1"
 )
 
 var (
@@ -46,9 +46,9 @@ func addMetadata(metadata map[string]string, keyCaseSensitive, key, value string
 	return key
 }
 
-func serviceMetaData(endpoint *v1.Endpoints, port string) (map[string]string, map[string]bool) {
+func serviceMetaData(endpoint *v1.Endpoints, service *v1.Service, port string) (map[string]string, map[string]bool) {
 	meta := make([]string, 0)
-	for k, v := range endpoint.Labels {
+	for k, v := range service.Annotations {
 		meta = append(meta, k+"="+v)
 	}
 	metadata := make(map[string]string)
@@ -80,8 +80,8 @@ func serviceMetaData(endpoint *v1.Endpoints, port string) (map[string]string, ma
 	return metadata, metadataFromPort
 }
 
-func parseLabels(labels map[string]string) (tagsArray []string) {
-	for key, value := range labels {
+func parseAnnotations(annotations map[string]string) (tagsArray []string) {
+	for key, value := range annotations {
 		tagsArray = append(tagsArray, key+"="+value)
 	}
 	return

@@ -13,6 +13,7 @@ package s3
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -33,7 +34,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 
-	"github.com/docker/distribution/context"
+	dcontext "github.com/docker/distribution/context"
 	"github.com/docker/distribution/registry/client/transport"
 	storagedriver "github.com/docker/distribution/registry/storage/driver"
 	"github.com/docker/distribution/registry/storage/driver/base"
@@ -98,6 +99,7 @@ type DriverParameters struct {
 	StorageClass                string
 	UserAgent                   string
 	ObjectACL                   string
+	SessionToken                string
 }
 
 func init() {
@@ -107,7 +109,9 @@ func init() {
 		"us-west-1",
 		"us-west-2",
 		"eu-west-1",
+		"eu-west-2",
 		"eu-central-1",
+		"ap-south-1",
 		"ap-southeast-1",
 		"ap-southeast-2",
 		"ap-northeast-1",
@@ -115,6 +119,7 @@ func init() {
 		"sa-east-1",
 		"cn-north-1",
 		"us-gov-west-1",
+		"ca-central-1",
 	} {
 		validRegions[region] = struct{}{}
 	}
@@ -328,6 +333,8 @@ func FromParameters(parameters map[string]interface{}) (*Driver, error) {
 		objectACL = objectACLString
 	}
 
+	sessionToken := ""
+
 	params := DriverParameters{
 		fmt.Sprint(accessKey),
 		fmt.Sprint(secretKey),
@@ -346,6 +353,7 @@ func FromParameters(parameters map[string]interface{}) (*Driver, error) {
 		storageClass,
 		fmt.Sprint(userAgent),
 		objectACL,
+		fmt.Sprint(sessionToken),
 	}
 
 	return New(params)
@@ -395,6 +403,7 @@ func New(params DriverParameters) (*Driver, error) {
 			Value: credentials.Value{
 				AccessKeyID:     params.AccessKey,
 				SecretAccessKey: params.SecretKey,
+				SessionToken:    params.SessionToken,
 			},
 		},
 		&credentials.EnvProvider{},
@@ -698,15 +707,11 @@ func (d *driver) copy(ctx context.Context, sourcePath string, destPath string) e
 		return nil
 	}
 
-	// Even in the worst case, a multipart copy should take no more
-	// than a few minutes, so 30 minutes is very conservative.
-	expires := time.Now().Add(time.Duration(30) * time.Minute)
 	createResp, err := d.S3.CreateMultipartUpload(&s3.CreateMultipartUploadInput{
 		Bucket:               aws.String(d.Bucket),
 		Key:                  aws.String(d.s3Path(destPath)),
 		ContentType:          d.getContentType(),
 		ACL:                  d.getACL(),
-		Expires:              aws.Time(expires),
 		SSEKMSKeyId:          d.getSSEKMSKeyID(),
 		ServerSideEncryption: d.getEncryptionMode(),
 		StorageClass:         d.getStorageClass(),
@@ -868,6 +873,136 @@ func (d *driver) URLFor(ctx context.Context, path string, options map[string]int
 	}
 
 	return req.Presign(expiresIn)
+}
+
+// Walk traverses a filesystem defined within driver, starting
+// from the given path, calling f on each file
+func (d *driver) Walk(ctx context.Context, from string, f storagedriver.WalkFn) error {
+	path := from
+	if !strings.HasSuffix(path, "/") {
+		path = path + "/"
+	}
+
+	prefix := ""
+	if d.s3Path("") == "" {
+		prefix = "/"
+	}
+
+	var objectCount int64
+	if err := d.doWalk(ctx, &objectCount, d.s3Path(path), prefix, f); err != nil {
+		return err
+	}
+
+	// S3 doesn't have the concept of empty directories, so it'll return path not found if there are no objects
+	if objectCount == 0 {
+		return storagedriver.PathNotFoundError{Path: from}
+	}
+
+	return nil
+}
+
+type walkInfoContainer struct {
+	storagedriver.FileInfoFields
+	prefix *string
+}
+
+// Path provides the full path of the target of this file info.
+func (wi walkInfoContainer) Path() string {
+	return wi.FileInfoFields.Path
+}
+
+// Size returns current length in bytes of the file. The return value can
+// be used to write to the end of the file at path. The value is
+// meaningless if IsDir returns true.
+func (wi walkInfoContainer) Size() int64 {
+	return wi.FileInfoFields.Size
+}
+
+// ModTime returns the modification time for the file. For backends that
+// don't have a modification time, the creation time should be returned.
+func (wi walkInfoContainer) ModTime() time.Time {
+	return wi.FileInfoFields.ModTime
+}
+
+// IsDir returns true if the path is a directory.
+func (wi walkInfoContainer) IsDir() bool {
+	return wi.FileInfoFields.IsDir
+}
+
+func (d *driver) doWalk(parentCtx context.Context, objectCount *int64, path, prefix string, f storagedriver.WalkFn) error {
+	var retError error
+
+	listObjectsInput := &s3.ListObjectsV2Input{
+		Bucket:    aws.String(d.Bucket),
+		Prefix:    aws.String(path),
+		Delimiter: aws.String("/"),
+		MaxKeys:   aws.Int64(listMax),
+	}
+
+	ctx, done := dcontext.WithTrace(parentCtx)
+	defer done("s3aws.ListObjectsV2Pages(%s)", path)
+	listObjectErr := d.S3.ListObjectsV2PagesWithContext(ctx, listObjectsInput, func(objects *s3.ListObjectsV2Output, lastPage bool) bool {
+
+		*objectCount += *objects.KeyCount
+		walkInfos := make([]walkInfoContainer, 0, *objects.KeyCount)
+
+		for _, dir := range objects.CommonPrefixes {
+			commonPrefix := *dir.Prefix
+			walkInfos = append(walkInfos, walkInfoContainer{
+				prefix: dir.Prefix,
+				FileInfoFields: storagedriver.FileInfoFields{
+					IsDir: true,
+					Path:  strings.Replace(commonPrefix[:len(commonPrefix)-1], d.s3Path(""), prefix, 1),
+				},
+			})
+		}
+
+		for _, file := range objects.Contents {
+			walkInfos = append(walkInfos, walkInfoContainer{
+				FileInfoFields: storagedriver.FileInfoFields{
+					IsDir:   false,
+					Size:    *file.Size,
+					ModTime: *file.LastModified,
+					Path:    strings.Replace(*file.Key, d.s3Path(""), prefix, 1),
+				},
+			})
+		}
+
+		sort.SliceStable(walkInfos, func(i, j int) bool { return walkInfos[i].FileInfoFields.Path < walkInfos[j].FileInfoFields.Path })
+
+		for _, walkInfo := range walkInfos {
+			err := f(walkInfo)
+
+			if err == storagedriver.ErrSkipDir {
+				if walkInfo.IsDir() {
+					continue
+				} else {
+					break
+				}
+			} else if err != nil {
+				retError = err
+				return false
+			}
+
+			if walkInfo.IsDir() {
+				if err := d.doWalk(ctx, objectCount, *walkInfo.prefix, prefix, f); err != nil {
+					retError = err
+					return false
+				}
+			}
+		}
+		return true
+	})
+
+	if retError != nil {
+		return retError
+	}
+
+	if listObjectErr != nil {
+		return listObjectErr
+	}
+
+	return nil
 }
 
 func (d *driver) s3Path(path string) string {

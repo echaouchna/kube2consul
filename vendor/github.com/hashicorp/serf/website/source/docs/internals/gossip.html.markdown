@@ -11,7 +11,7 @@ Serf uses a gossip protocol to broadcast messages to the cluster. This page docu
 Serf uses a [gossip protocol](https://en.wikipedia.org/wiki/Gossip_protocol)
 to broadcast messages to the cluster. This page documents the details of
 this internal protocol. The gossip protocol is based on
-["SWIM: Scalable Weakly-consistent Infection-style Process Group Membership Protocol"](https://www.cs.cornell.edu/~asdas/research/dsn02-swim.pdf),
+["SWIM: Scalable Weakly-consistent Infection-style Process Group Membership Protocol"](http://www.cs.cornell.edu/info/projects/spinglass/public_pdfs/swim.pdf),
 with a few minor adaptations, mostly to increase propagation speed
 and convergence rate.
 
@@ -109,6 +109,11 @@ which allows the suspected node to refute its status and remain healthy.
 These two mechanisms combine to make Serf much more robust to degraded nodes in a
 cluster, while keeping failure detection performance unchanged. There is no
 additional configuration for Lifeguard, it tunes itself automatically.
+
+For more details about Lifeguard, please see the
+[Making Gossip More Robust with Lifeguard](https://www.hashicorp.com/blog/making-gossip-more-robust-with-lifeguard/)
+blog post, which provides a high level overview of the HashiCorp Research paper
+[Lifeguard : SWIM-ing with Situational Awareness](https://arxiv.org/abs/1707.00788).
 
 ## Serf-Specific Messages
 

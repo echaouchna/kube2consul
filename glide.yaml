@@ -1,0 +1,8 @@
+package: github.com/DigitasLBiParis/kube2consul2
+import:
+- package: k8s.io/client-go
+  version: v7.0.0
+- package: github.com/coreos/pkg
+  version: v4.0.0
+- package: github.com/davecgh/go-spew
+  version: v1.1.0

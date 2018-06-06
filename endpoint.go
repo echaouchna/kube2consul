@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/api/core/v1"
 )
 
 // Endpoint is a summary of kubernetes endpoint
@@ -21,6 +21,20 @@ func NewEndpoint(name, address string, port int32, refName string, tags []string
 	return Endpoint{name, address, port, refName, tags}
 }
 
+func getService(ep *v1.Endpoints) *v1.Service {
+	service := &v1.Service{}
+	err := k8sRestClient.Get().
+		Namespace(ep.Namespace).
+		Resource("services").
+		Name(ep.Name).
+		Do().
+		Into(service)
+	if err != nil {
+		return nil
+	}
+	return service
+}
+
 func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map[string][]Endpoint) {
 	var (
 		eps                 []Endpoint
@@ -28,10 +42,16 @@ func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map
 		perServiceEndpoints = make(map[string][]Endpoint)
 	)
 
+	service := getService(endpoint)
+
+	if service == nil {
+		return eps, perServiceEndpoints
+	}
+
 	for _, subset := range endpoint.Subsets {
 		for _, port := range subset.Ports {
 			servicePort := strconv.Itoa((int)(port.Port))
-			metadata, _ := serviceMetaData(endpoint, servicePort)
+			metadata, _ := serviceMetaData(endpoint, service, servicePort)
 
 			ignore := mapDefault(metadata, "ignore", "")
 			if ignore != "" {

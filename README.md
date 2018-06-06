@@ -22,15 +22,14 @@ Kube2consul runs in a kubernetes cluster by default. It is able to work out of c
 | `-explicit`         | `K2C_EXPLICIT`       | `false`                   |
 
 Kube2consul is able to detect any endpoint update on k8s and add/remove it to/from consul.
-It can also read service labels, below an example of kube service with kube2consul compatible labels
+It can also read service annotations, below an example of kube service with kube2consul compatible annotations
 
 ```yaml
 apiVersion: v1
 kind: Service
 metadata:
   name: nginx-svc
-  labels:
-    run: svc-nginx
+  annotations:
     SERVICE_80_NAME: nginx-http
     SERVICE_80_TAG_MyHTTPTag: MyValue
     SERVICE_80_TAG_AnotherTag: AnotherValue
@@ -38,6 +37,8 @@ metadata:
     SERVICE_443_NAME: nginx-https
     SERVICE_443_TAG_0: enable_tls
     SERVICE_8080_IGNORE: "true"
+  labels:
+    run: svc-nginx
 spec:
   type: NodePort
   ports:

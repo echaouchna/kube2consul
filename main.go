@@ -9,21 +9,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	"github.com/coreos/pkg/flagutil"
-	"github.com/golang/glog"
-
-	consulapi "github.com/hashicorp/consul/api"
-
-	"k8s.io/client-go/pkg/api/v1"
-	kcache "k8s.io/client-go/tools/cache"
-
 	health "github.com/docker/go-healthcheck"
+	"github.com/golang/glog"
+	"github.com/gorilla/mux"
+	consulapi "github.com/hashicorp/consul/api"
+	"k8s.io/api/core/v1"
+	kcache "k8s.io/client-go/tools/cache"
 )
 
 var (
-	opts               cliOpts
+	opts               cliOptions
 	kube2consulVersion string
 	lock               *consulapi.Lock
 	lockCh             <-chan struct{}
@@ -34,7 +30,7 @@ type kube2consul struct {
 	endpointsStore kcache.Store
 }
 
-type cliOpts struct {
+type cliOptions struct {
 	kubeAPI      string
 	consulAPI    string
 	consulToken  string
