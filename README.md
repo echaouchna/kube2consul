@@ -31,11 +31,8 @@ metadata:
   name: nginx-svc
   annotations:
     SERVICE_80_NAME: nginx-http
-    SERVICE_80_TAG_MyHTTPTag: MyValue
-    SERVICE_80_TAG_AnotherTag: AnotherValue
-    SERVICE_80_CHECK_HTTP: ""
     SERVICE_443_NAME: nginx-https
-    SERVICE_443_TAG_0: enable_tls
+    SERVICE_443_TAGS: "enable_tls, key=value"
     SERVICE_8080_IGNORE: "true"
   labels:
     run: svc-nginx
