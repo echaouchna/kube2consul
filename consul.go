@@ -37,13 +37,17 @@ func (k2c *kube2consul) registerEndpoint(e Endpoint) error {
 
 	for _, service := range consulServices {
 		if endpointExistsCheckTags(service.Node, service.Address, service.ServicePort, service.ServiceTags, []Endpoint{e}, true) {
+			glog.Infof("Endpoint already exists: %+v", e)
 			return nil
 		}
 	}
 
+	glog.Infof("Data to be registred %+v", e)
+
 	service := &consulapi.AgentService{
 		Service: e.Name,
 		Port:    int(e.Port),
+		Address: e.Address,
 		Tags:    append([]string{opts.consulTag}, e.Tags...),
 	}
 
@@ -57,7 +61,7 @@ func (k2c *kube2consul) registerEndpoint(e Endpoint) error {
 	if err != nil {
 		return fmt.Errorf("Error registrating service %v (%v, %v): %v", e.Name, e.RefName, e.Address, err)
 	}
-	glog.Infof("Update service %v (%v, %v)", e.Name, e.RefName, e.Address)
+	glog.Infof("Update service %v (%v, %v, %v, %+v)", e.Name, e.RefName, e.Address, e.Port, e.Tags)
 
 	return nil
 }
@@ -69,10 +73,13 @@ func endpointExists(refName, address string, port int, endpoints []Endpoint) boo
 func endpointExistsCheckTags(refName, address string, port int, tags []string, endpoints []Endpoint, checkTags bool) bool {
 	for _, e := range endpoints {
 		if e.RefName == refName && e.Address == address && int(e.Port) == port {
-			sort.Strings(tags)
-			sort.Strings(e.Tags)
-			if checkTags && !reflect.DeepEqual(tags, e.Tags) {
-				return false
+			if checkTags {
+				endpointTags := append([]string{opts.consulTag}, e.Tags...)
+				sort.Strings(tags)
+				sort.Strings(endpointTags)
+				if !reflect.DeepEqual(tags, endpointTags) {
+					return false
+				}
 			}
 			return true
 		}

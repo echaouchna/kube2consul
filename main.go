@@ -128,6 +128,8 @@ func main() {
 		os.Exit(0)
 	}
 
+	glog.Info("Starting kube2consul ", kube2consulVersion)
+
 	// create consul client
 	consulClient, err := newConsulClient(opts.consulAPI, opts.consulToken)
 	if err != nil {
