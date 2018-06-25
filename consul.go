@@ -37,7 +37,6 @@ func (k2c *kube2consul) registerEndpoint(e Endpoint) error {
 
 	for _, service := range consulServices {
 		if endpointExistsCheckTags(service.Node, service.Address, service.ServicePort, service.ServiceTags, []Endpoint{e}, true) {
-			glog.Infof("Endpoint already exists: %+v", e)
 			return nil
 		}
 	}

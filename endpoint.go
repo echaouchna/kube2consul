@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/golang/glog"
-
 	"k8s.io/api/core/v1"
 )
 
@@ -47,7 +45,6 @@ func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map
 	service := getService(endpoint)
 
 	if service == nil {
-		glog.Infof("Ignored endpoint %v due to missing service", endpoint.Name)
 		return eps, perServiceEndpoints
 	}
 
@@ -85,7 +82,6 @@ func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map
 }
 
 func (k2c *kube2consul) updateEndpoints(ep *v1.Endpoints) error {
-	glog.Infof("Received endpoint %v", ep.Name)
 	endpoints, perServiceEndpoints := k2c.generateEntries(ep)
 
 	for _, e := range endpoints {
