@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sync/syncmap"
+
 	"github.com/coreos/pkg/flagutil"
 	health "github.com/docker/go-healthcheck"
 	"github.com/golang/glog"
@@ -28,6 +30,7 @@ var (
 type kube2consul struct {
 	consulCatalog  *consulapi.Catalog
 	endpointsStore kcache.Store
+	ednpointsCache syncmap.Map
 }
 
 type cliOptions struct {
@@ -115,6 +118,31 @@ func kubernetesCheck() error {
 	return nil
 }
 
+func updateJob(k2c *kube2consul) {
+	lastIterations := make(map[string]time.Time)
+	for {
+		k2c.ednpointsCache.Range(func(key, value interface{}) bool {
+			// cast value to correct format
+			timestampedEndpoint := value.(TimestampedEndpoint)
+			name := key.(string)
+
+			if lastIteration, ok := lastIterations[name]; ok && lastIteration.After(timestampedEndpoint.Timestamp) {
+				return true
+			}
+
+			if err := k2c.updateEndpoints(timestampedEndpoint.Endpoint); err != nil {
+				glog.Errorf("Error handling update event: %v", err)
+				return true
+			}
+
+			lastIterations[name] = time.Now()
+
+			return true
+		})
+		time.Sleep(time.Second)
+	}
+}
+
 func main() {
 	// parse flags
 	flag.Parse()
@@ -177,6 +205,8 @@ func main() {
 	}
 
 	k2c.endpointsStore = k2c.watchEndpoints(kubeClient)
+
+	go updateJob(&k2c)
 
 	// Handle SIGINT and SIGTERM.
 	sigs := make(chan os.Signal)

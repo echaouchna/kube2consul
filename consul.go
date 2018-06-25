@@ -42,8 +42,6 @@ func (k2c *kube2consul) registerEndpoint(e Endpoint) error {
 		}
 	}
 
-	glog.Infof("Data to be registred %+v", e)
-
 	service := &consulapi.AgentService{
 		Service: e.Name,
 		Port:    int(e.Port),
@@ -59,7 +57,7 @@ func (k2c *kube2consul) registerEndpoint(e Endpoint) error {
 
 	_, err = k2c.consulCatalog.Register(reg, nil)
 	if err != nil {
-		return fmt.Errorf("Error registrating service %v (%v, %v): %v", e.Name, e.RefName, e.Address, err)
+		return fmt.Errorf("Error registrating service %v (%v, %v, %v, %v): %v", e.Name, e.RefName, e.Address, e.Port, e.Tags, err)
 	}
 	glog.Infof("Update service %v (%v, %v, %v, %+v)", e.Name, e.RefName, e.Address, e.Port, e.Tags)
 

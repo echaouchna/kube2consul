@@ -19,6 +19,11 @@ var (
 	k8sRestClient rest.Interface
 )
 
+type TimestampedEndpoint struct {
+	Endpoint  *v1.Endpoints
+	Timestamp time.Time
+}
+
 func newKubeClient(apiserver string, kubeconfig string) (kubeClient kubernetes.Interface, err error) {
 	if kubeconfig == "" {
 		config, err := rest.InClusterConfig()
@@ -76,9 +81,7 @@ func createEndpointsListWatcher(kubeClient kubernetes.Interface) *kcache.ListWat
 
 func (k2c *kube2consul) handleEndpointUpdate(obj interface{}) {
 	if e, ok := obj.(*v1.Endpoints); ok {
-		if err := k2c.updateEndpoints(e); err != nil {
-			glog.Errorf("Error handling update event: %v", err)
-		}
+		k2c.ednpointsCache.Store(e.Name, TimestampedEndpoint{e, time.Now()})
 	}
 }
 
