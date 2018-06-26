@@ -81,7 +81,9 @@ func createEndpointsListWatcher(kubeClient kubernetes.Interface) *kcache.ListWat
 
 func (k2c *kube2consul) handleEndpointUpdate(obj interface{}) {
 	if e, ok := obj.(*v1.Endpoints); ok {
-		k2c.ednpointsCache.Store(e.Name, TimestampedEndpoint{e, time.Now()})
+		if !stringInSlice(e.Namespace, k2c.excludedNamespaces) {
+			k2c.ednpointsCache.Store(e.Name, TimestampedEndpoint{e, time.Now()})
+		}
 	}
 }
 
@@ -89,7 +91,7 @@ func (k2c *kube2consul) watchEndpoints(kubeClient kubernetes.Interface) kcache.S
 	eStore, eController := kcache.NewInformer(
 		createEndpointsListWatcher(kubeClient),
 		&v1.Endpoints{},
-		time.Duration(opts.resyncPeriod)*time.Second,
+		0,
 		kcache.ResourceEventHandlerFuncs{
 			AddFunc: func(newObj interface{}) {
 				go k2c.handleEndpointUpdate(newObj)

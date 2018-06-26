@@ -27,24 +27,28 @@ var (
 	lockCh             <-chan struct{}
 )
 
+type arrayFlags []string
+
 type kube2consul struct {
-	consulCatalog  *consulapi.Catalog
-	endpointsStore kcache.Store
-	ednpointsCache syncmap.Map
+	consulCatalog      *consulapi.Catalog
+	endpointsStore     kcache.Store
+	ednpointsCache     syncmap.Map
+	excludedNamespaces []string
 }
 
 type cliOptions struct {
-	kubeAPI      string
-	consulAPI    string
-	consulToken  string
-	resyncPeriod int
-	version      bool
-	kubeConfig   string
-	lock         bool
-	lockKey      string
-	noHealth     bool
-	consulTag    string
-	explicit     bool
+	kubeAPI            string
+	consulAPI          string
+	consulToken        string
+	resyncPeriod       int
+	version            bool
+	kubeConfig         string
+	lock               bool
+	lockKey            string
+	noHealth           bool
+	consulTag          string
+	explicit           bool
+	excludedNamespaces arrayFlags
 }
 
 func init() {
@@ -59,6 +63,16 @@ func init() {
 	flag.BoolVar(&opts.noHealth, "no-health", false, "Disable endpoint /health on port 8080")
 	flag.BoolVar(&opts.explicit, "explicit", false, "Only register containers which have SERVICE_NAME label set")
 	flag.StringVar(&opts.consulTag, "consul-tag", "kube2consul", "Tag setted on services to identify services managed by kube2consul in Consul")
+	flag.Var(&opts.excludedNamespaces, "exclude-namespace", "Exclude a namespace")
+}
+
+func (i *arrayFlags) String() string {
+	return "my string representation"
+}
+
+func (i *arrayFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
 }
 
 func inSlice(value string, slice []string) bool {
@@ -139,7 +153,7 @@ func updateJob(k2c *kube2consul) {
 
 			return true
 		})
-		time.Sleep(time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -203,6 +217,8 @@ func main() {
 	k2c := kube2consul{
 		consulCatalog: consulClient.Catalog(),
 	}
+
+	k2c.excludedNamespaces = opts.excludedNamespaces
 
 	k2c.endpointsStore = k2c.watchEndpoints(kubeClient)
 
