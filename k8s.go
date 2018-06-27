@@ -75,8 +75,8 @@ func createEndpointsListWatcher(kubeClient kubernetes.Interface) *kcache.ListWat
 
 func (k2c *kube2consul) handleEndpointUpdate(obj interface{}) {
 	if e, ok := obj.(*v1.Endpoints); ok {
-		if !stringInSlice(e.Namespace, k2c.excludedNamespaces) {
-			k2c.ednpointsChan <- e
+		if !stringInSlice(e.Namespace, ExcludedNamespaces) {
+			EndpointsChan <- e
 		}
 	}
 }

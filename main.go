@@ -23,15 +23,15 @@ var (
 	kube2consulVersion string
 	lock               *consulapi.Lock
 	lockCh             <-chan struct{}
+	EndpointsChan      chan interface{}
+	ExcludedNamespaces []string
 )
 
 type arrayFlags []string
 
 type kube2consul struct {
-	consulCatalog      *consulapi.Catalog
-	endpointsStore     kcache.Store
-	ednpointsChan      chan *v1.Endpoints
-	excludedNamespaces []string
+	consulCatalog  *consulapi.Catalog
+	endpointsStore kcache.Store
 }
 
 type cliOptions struct {
@@ -46,7 +46,7 @@ type cliOptions struct {
 	noHealth           bool
 	consulTag          string
 	explicit           bool
-	excludedNamespaces arrayFlags
+	ExcludedNamespaces arrayFlags
 }
 
 func init() {
@@ -61,7 +61,7 @@ func init() {
 	flag.BoolVar(&opts.noHealth, "no-health", false, "Disable endpoint /health on port 8080")
 	flag.BoolVar(&opts.explicit, "explicit", false, "Only register containers which have SERVICE_NAME label set")
 	flag.StringVar(&opts.consulTag, "consul-tag", "kube2consul", "Tag setted on services to identify services managed by kube2consul in Consul")
-	flag.Var(&opts.excludedNamespaces, "exclude-namespace", "Exclude a namespace")
+	flag.Var(&opts.ExcludedNamespaces, "exclude-namespace", "Exclude a namespace")
 }
 
 func (i *arrayFlags) String() string {
@@ -130,17 +130,6 @@ func kubernetesCheck() error {
 	return nil
 }
 
-func updateJob(k2c *kube2consul) {
-	for {
-		select {
-		case endpoint := <-k2c.ednpointsChan:
-			if err := k2c.updateEndpoints(endpoint); err != nil {
-				glog.Errorf("Error handling update event: %v", err)
-			}
-		}
-	}
-}
-
 func main() {
 	// parse flags
 	flag.Parse()
@@ -198,15 +187,24 @@ func main() {
 		glog.Info("Lock acquired")
 	}
 
+	ExcludedNamespaces = opts.ExcludedNamespaces
+	EndpointsChan = make(chan interface{})
+	defer close(EndpointsChan)
+
 	k2c := kube2consul{
-		consulCatalog:      consulClient.Catalog(),
-		excludedNamespaces: opts.excludedNamespaces,
-		ednpointsChan:      make(chan *v1.Endpoints),
+		consulCatalog: consulClient.Catalog(),
 	}
 
 	k2c.endpointsStore = k2c.watchEndpoints(kubeClient)
 
-	go updateJob(&k2c)
+	stopWorkers := RunWorkers(EndpointsChan, func(id int, value interface{}) {
+		endpoint := value.(*v1.Endpoints)
+		if err := k2c.updateEndpoints(endpoint); err != nil {
+			glog.Errorf("Error handling update event: %v", err)
+		}
+	})
+
+	defer stopWorkers()
 
 	// Handle SIGINT and SIGTERM.
 	sigs := make(chan os.Signal)
