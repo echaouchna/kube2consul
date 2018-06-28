@@ -96,6 +96,13 @@ func inSlice(value string, slice []string) bool {
 }
 
 func (k2c *kube2consul) RemoveDNSGarbage() {
+	for {
+		if len(k2c.endpointsStore.List()) > 0 {
+			break
+		}
+		time.Sleep(time.Second * time.Duration(opts.resyncPeriod))
+	}
+
 	epSet := make(map[string]struct{})
 
 	for _, obj := range k2c.endpointsStore.List() {

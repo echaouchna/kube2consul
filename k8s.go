@@ -79,7 +79,7 @@ func createServicesListWatcher(kubeClient kubernetes.Interface) *kcache.ListWatc
 	return kcache.NewListWatchFromClient(k8sRestClient, "services", kapi.NamespaceAll, fields.Everything())
 }
 
-func (k2c *kube2consul) handleEndpointUpdate(actionType ActionType, obj interface{}) {
+func (k2c *kube2consul) handleUpdate(actionType ActionType, obj interface{}) {
 	if obj != nil {
 		if e, ok := obj.(*v1.Endpoints); ok {
 			if !stringInSlice(e.Namespace, ExcludedNamespaces) {
@@ -96,17 +96,17 @@ func (k2c *kube2consul) handleEndpointUpdate(actionType ActionType, obj interfac
 }
 
 func (k2c *kube2consul) watchEndpoints(kubeClient kubernetes.Interface) kcache.Store {
-	go k2c.handleEndpointUpdate(REMOVE_DNS_GARBAGE, nil)
+	go k2c.handleUpdate(REMOVE_DNS_GARBAGE, nil)
 	eStore, eController := kcache.NewInformer(
 		createEndpointsListWatcher(kubeClient),
 		&v1.Endpoints{},
 		0,
 		kcache.ResourceEventHandlerFuncs{
 			AddFunc: func(newObj interface{}) {
-				go k2c.handleEndpointUpdate(ADD_OR_UPDATE, newObj)
+				go k2c.handleUpdate(ADD_OR_UPDATE, newObj)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				go k2c.handleEndpointUpdate(ADD_OR_UPDATE, newObj)
+				go k2c.handleUpdate(ADD_OR_UPDATE, newObj)
 			},
 		},
 	)
@@ -116,7 +116,7 @@ func (k2c *kube2consul) watchEndpoints(kubeClient kubernetes.Interface) kcache.S
 		0,
 		kcache.ResourceEventHandlerFuncs{
 			DeleteFunc: func(obj interface{}) {
-				go k2c.handleEndpointUpdate(DELETE, obj)
+				go k2c.handleUpdate(DELETE, obj)
 			},
 		},
 	)
