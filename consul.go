@@ -125,3 +125,10 @@ func (k2c *kube2consul) removeDeletedEndpoints(serviceName string, endpoints []E
 	}
 	return nil
 }
+
+func (k2c *kube2consul) removeDeletedServices(serviceNames []string) error {
+	for _, serviceName := range serviceNames {
+		k2c.removeDeletedEndpoints(serviceName, []Endpoint{})
+	}
+	return nil
+}

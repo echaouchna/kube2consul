@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,7 +24,7 @@ var (
 	kube2consulVersion string
 	lock               *consulapi.Lock
 	lockCh             <-chan struct{}
-	EndpointsChan      chan interface{}
+	jobQueue           chan Action
 	ExcludedNamespaces []string
 )
 
@@ -47,6 +48,18 @@ type cliOptions struct {
 	consulTag          string
 	explicit           bool
 	ExcludedNamespaces arrayFlags
+}
+
+type ActionType string
+
+const (
+	ADD_OR_UPDATE      ActionType = "addOrUpdate"
+	DELETE             ActionType = "delete"
+	REMOVE_DNS_GARBAGE ActionType = "removeDNSGarbage"
+)
+
+func (actionType ActionType) value() string {
+	return string(actionType)
 }
 
 func init() {
@@ -122,12 +135,39 @@ func consulCheck() error {
 
 	return nil
 }
+
 func kubernetesCheck() error {
 	_, err := newKubeClient(opts.kubeAPI, opts.kubeConfig)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func initJobFunctions(k2c kube2consul) map[string]JobFunc {
+	actionJobs := make(map[string]JobFunc)
+	actionJobs[ADD_OR_UPDATE.value()] = func(id int, value interface{}) {
+		endpoint := value.(*v1.Endpoints)
+		if err := k2c.updateEndpoints(endpoint); err != nil {
+			glog.Errorf("Error handling update event: %v", err)
+		}
+	}
+
+	actionJobs[DELETE.value()] = func(id int, value interface{}) {
+		service := value.(*v1.Service)
+		var servicesToDelete []string
+		for k, v := range service.Annotations {
+			if strings.HasPrefix(k, "SERVICE_") && strings.HasSuffix(k, "_NAME") {
+				servicesToDelete = append(servicesToDelete, v)
+			}
+		}
+		k2c.removeDeletedServices(servicesToDelete)
+	}
+
+	actionJobs[REMOVE_DNS_GARBAGE.value()] = func(id int, value interface{}) {
+		k2c.RemoveDNSGarbage()
+	}
+	return actionJobs
 }
 
 func main() {
@@ -188,8 +228,8 @@ func main() {
 	}
 
 	ExcludedNamespaces = opts.ExcludedNamespaces
-	EndpointsChan = make(chan interface{})
-	defer close(EndpointsChan)
+	jobQueue = make(chan Action)
+	defer close(jobQueue)
 
 	k2c := kube2consul{
 		consulCatalog: consulClient.Catalog(),
@@ -197,12 +237,7 @@ func main() {
 
 	k2c.endpointsStore = k2c.watchEndpoints(kubeClient)
 
-	stopWorkers := RunWorkers(EndpointsChan, func(id int, value interface{}) {
-		endpoint := value.(*v1.Endpoints)
-		if err := k2c.updateEndpoints(endpoint); err != nil {
-			glog.Errorf("Error handling update event: %v", err)
-		}
-	})
+	stopWorkers := RunWorkers(jobQueue, initJobFunctions(k2c))
 
 	defer stopWorkers()
 
@@ -212,8 +247,6 @@ func main() {
 
 	for {
 		select {
-		case <-time.NewTicker(time.Duration(opts.resyncPeriod) * time.Second).C:
-			k2c.RemoveDNSGarbage()
 		case <-lockCh:
 			glog.Fatalf("Lost lock, Exting")
 		case sig := <-sigs:

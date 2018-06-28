@@ -7,14 +7,21 @@ import (
 
 type JobFunc func(int, interface{})
 
-func threadMain(id int, queue chan interface{}, wg *sync.WaitGroup, job JobFunc) chan bool {
+type Action struct {
+	name string
+	data interface{}
+}
+
+func threadMain(id int, queue chan Action, wg *sync.WaitGroup, jobs map[string]JobFunc) chan bool {
 	quitCommand := make(chan bool, 1)
 	go func() {
 		for {
 			select {
-			case task := <-queue:
+			case action := <-queue:
 				wg.Add(1)
-				job(id, task)
+				if job, ok := jobs[action.name]; ok {
+					job(id, action.data)
+				}
 				wg.Done()
 			case <-quitCommand:
 				return
@@ -25,14 +32,14 @@ func threadMain(id int, queue chan interface{}, wg *sync.WaitGroup, job JobFunc)
 	return quitCommand
 }
 
-func RunWorkers(queue chan interface{}, job JobFunc) func() {
+func RunWorkers(queue chan Action, jobs map[string]JobFunc) func() {
 	var wg sync.WaitGroup
 	cpuCount := runtime.NumCPU()
 	runtime.GOMAXPROCS(cpuCount)
 
 	quitCommands := make([]chan bool, cpuCount)
 	for i := 0; i < cpuCount; i++ {
-		quitCommands[i] = threadMain(i+1, queue, &wg, job)
+		quitCommands[i] = threadMain(i+1, queue, &wg, jobs)
 	}
 	return func() {
 		for _, quitCommand := range quitCommands {
