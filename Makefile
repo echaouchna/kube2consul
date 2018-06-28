@@ -6,4 +6,4 @@ build:
 	go build -v -i --ldflags '-s -extldflags "-static" -X main.kube2consulVersion=${VERSION}' -o bin/${NAME} .
 
 build-image:
-	docker build -t kube2consul .
+	docker build --no-cache -t echaouchna/kube2consul:${VERSION} .
