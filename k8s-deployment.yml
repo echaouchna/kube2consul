@@ -51,7 +51,7 @@ spec:
       serviceAccountName: kube2consul
       containers:
       - name: kube2consul
-        image: kube2consul:latest
+        image: echaouchna/kube2consul:latest
         command: ["kube2consul", "--lock", "--consul-api", "svc-consul.administration.svc.cluster.local:8500", "-explicit", "-resync-period", "5", "-exclude-namespace", "kube-system", "-exclude-namespace", "kube-public"]
         imagePullPolicy: Always
         livenessProbe:

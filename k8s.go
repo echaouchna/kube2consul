@@ -84,15 +84,15 @@ func (k2c *kube2consul) handleUpdate(actionType ActionType, obj interface{}) {
 	if obj != nil {
 		if e, ok := obj.(*v1.Endpoints); ok {
 			if !stringInSlice(e.Namespace, ExcludedNamespaces) {
-				jobQueue <- concurrent.Action{actionType.value(), e}
+				jobQueue <- concurrent.Action{Name: actionType.value(), Data: e}
 			}
 		} else if s, ok := obj.(*v1.Service); ok {
 			if !stringInSlice(s.Namespace, ExcludedNamespaces) {
-				jobQueue <- concurrent.Action{actionType.value(), s}
+				jobQueue <- concurrent.Action{Name: actionType.value(), Data: s}
 			}
 		}
 	} else {
-		jobQueue <- concurrent.Action{actionType.value(), nil}
+		jobQueue <- concurrent.Action{Name: actionType.value(), Data: nil}
 	}
 }
 
