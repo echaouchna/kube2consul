@@ -1,4 +1,4 @@
-package main
+package concurrent
 
 import (
 	"runtime"
@@ -8,8 +8,8 @@ import (
 type JobFunc func(int, interface{})
 
 type Action struct {
-	name string
-	data interface{}
+	Name string
+	Data interface{}
 }
 
 func threadMain(id int, queue chan Action, wg *sync.WaitGroup, jobs map[string]JobFunc) chan bool {
@@ -19,8 +19,8 @@ func threadMain(id int, queue chan Action, wg *sync.WaitGroup, jobs map[string]J
 			select {
 			case action := <-queue:
 				wg.Add(1)
-				if job, ok := jobs[action.name]; ok {
-					job(id, action.data)
+				if job, ok := jobs[action.Name]; ok {
+					job(id, action.Data)
 				}
 				wg.Done()
 			case <-quitCommand:

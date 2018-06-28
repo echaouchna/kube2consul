@@ -12,6 +12,7 @@ import (
 
 	"github.com/coreos/pkg/flagutil"
 	health "github.com/docker/go-healthcheck"
+	concurrent "github.com/echaouchna/go-threadpool"
 	"github.com/golang/glog"
 	"github.com/gorilla/mux"
 	consulapi "github.com/hashicorp/consul/api"
@@ -24,7 +25,7 @@ var (
 	kube2consulVersion string
 	lock               *consulapi.Lock
 	lockCh             <-chan struct{}
-	jobQueue           chan Action
+	jobQueue           chan concurrent.Action
 	ExcludedNamespaces []string
 )
 
@@ -151,8 +152,8 @@ func kubernetesCheck() error {
 	return nil
 }
 
-func initJobFunctions(k2c kube2consul) map[string]JobFunc {
-	actionJobs := make(map[string]JobFunc)
+func initJobFunctions(k2c kube2consul) map[string]concurrent.JobFunc {
+	actionJobs := make(map[string]concurrent.JobFunc)
 	actionJobs[ADD_OR_UPDATE.value()] = func(id int, value interface{}) {
 		endpoint := value.(*v1.Endpoints)
 		if err := k2c.updateEndpoints(endpoint); err != nil {
@@ -235,7 +236,7 @@ func main() {
 	}
 
 	ExcludedNamespaces = opts.ExcludedNamespaces
-	jobQueue = make(chan Action)
+	jobQueue = make(chan concurrent.Action)
 	defer close(jobQueue)
 
 	k2c := kube2consul{
@@ -244,7 +245,7 @@ func main() {
 
 	k2c.endpointsStore = k2c.watchEndpoints(kubeClient)
 
-	stopWorkers := RunWorkers(jobQueue, initJobFunctions(k2c))
+	stopWorkers := concurrent.RunWorkers(jobQueue, initJobFunctions(k2c))
 
 	defer stopWorkers()
 

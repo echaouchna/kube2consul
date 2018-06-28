@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	concurrent "github.com/echaouchna/go-threadpool"
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	kapi "k8s.io/api/core/v1"
@@ -83,15 +84,15 @@ func (k2c *kube2consul) handleUpdate(actionType ActionType, obj interface{}) {
 	if obj != nil {
 		if e, ok := obj.(*v1.Endpoints); ok {
 			if !stringInSlice(e.Namespace, ExcludedNamespaces) {
-				jobQueue <- Action{actionType.value(), e}
+				jobQueue <- concurrent.Action{actionType.value(), e}
 			}
 		} else if s, ok := obj.(*v1.Service); ok {
 			if !stringInSlice(s.Namespace, ExcludedNamespaces) {
-				jobQueue <- Action{actionType.value(), s}
+				jobQueue <- concurrent.Action{actionType.value(), s}
 			}
 		}
 	} else {
-		jobQueue <- Action{actionType.value(), nil}
+		jobQueue <- concurrent.Action{actionType.value(), nil}
 	}
 }
 

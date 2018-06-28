@@ -1,4 +1,4 @@
-package: github.com/DigitasLBiParis/kube2consul
+package: github.com/echaouchna/kube2consul
 import:
 - package: k8s.io/client-go
   version: v7.0.0
