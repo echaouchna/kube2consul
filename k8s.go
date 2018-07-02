@@ -68,56 +68,62 @@ func newKubeClient(apiserver string, kubeconfig string) (kubeClient kubernetes.I
 	return kubeClient, nil
 }
 
-// Returns a cache.ListWatch that gets all changes to endpoints.
-func createEndpointsListWatcher(kubeClient kubernetes.Interface) *kcache.ListWatch {
+// Returns a cache.ListWatch that gets all changes to a resourceType.
+func createListWatcher(kubeClient kubernetes.Interface, resourceType string) *kcache.ListWatch {
 	k8sRestClient = kubeClient.CoreV1().RESTClient()
-	return kcache.NewListWatchFromClient(k8sRestClient, "endpoints", kapi.NamespaceAll, fields.Everything())
+	return kcache.NewListWatchFromClient(k8sRestClient, resourceType, kapi.NamespaceAll, fields.Everything())
 }
 
-// Returns a cache.ListWatch that gets all changes to endpoints.
-func createServicesListWatcher(kubeClient kubernetes.Interface) *kcache.ListWatch {
-	k8sRestClient = kubeClient.CoreV1().RESTClient()
-	return kcache.NewListWatchFromClient(k8sRestClient, "services", kapi.NamespaceAll, fields.Everything())
-}
-
-func (k2c *kube2consul) handleUpdate(actionType ActionType, obj interface{}) {
-	if obj != nil {
-		if e, ok := obj.(*v1.Endpoints); ok {
-			if !stringInSlice(e.Namespace, ExcludedNamespaces) {
-				jobQueue <- concurrent.Action{Name: actionType.value(), Data: e}
-			}
-		} else if s, ok := obj.(*v1.Service); ok {
-			if !stringInSlice(s.Namespace, ExcludedNamespaces) {
-				jobQueue <- concurrent.Action{Name: actionType.value(), Data: s}
+func (k2c *kube2consul) handleUpdate(resourceType string, actionType ActionType, obj interface{}) {
+	var action concurrent.Action
+	switch resourceType {
+	case "endpoints":
+		{
+			if e, ok := obj.(*v1.Endpoints); ok {
+				if !stringInSlice(e.Namespace, ExcludedNamespaces) {
+					action = concurrent.Action{Name: actionType.value(), Data: e}
+				}
 			}
 		}
-	} else {
-		jobQueue <- concurrent.Action{Name: actionType.value(), Data: nil}
+	case "services":
+		{
+			if s, ok := obj.(*v1.Service); ok {
+				if !stringInSlice(s.Namespace, ExcludedNamespaces) {
+					action = concurrent.Action{Name: actionType.value(), Data: s}
+				}
+			}
+		}
 	}
+	jobQueue <- action
+}
+
+func cleanGarbage() {
+	jobQueue <- concurrent.Action{Name: REMOVE_DNS_GARBAGE.value(), Data: nil}
 }
 
 func (k2c *kube2consul) watchEndpoints(kubeClient kubernetes.Interface) kcache.Store {
-	go k2c.handleUpdate(REMOVE_DNS_GARBAGE, nil)
+	go cleanGarbage()
 	eStore, eController := kcache.NewInformer(
-		createEndpointsListWatcher(kubeClient),
+		createListWatcher(kubeClient, "endpoints"),
 		&v1.Endpoints{},
 		0,
 		kcache.ResourceEventHandlerFuncs{
 			AddFunc: func(newObj interface{}) {
-				go k2c.handleUpdate(ADD_OR_UPDATE, newObj)
+				go k2c.handleUpdate("endpoints", ADD_OR_UPDATE, newObj)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				go k2c.handleUpdate(ADD_OR_UPDATE, newObj)
+				go k2c.handleUpdate("endpoints", ADD_OR_UPDATE, newObj)
 			},
 		},
 	)
+
 	_, sController := kcache.NewInformer(
-		createServicesListWatcher(kubeClient),
+		createListWatcher(kubeClient, "services"),
 		&v1.Service{},
 		0,
 		kcache.ResourceEventHandlerFuncs{
 			DeleteFunc: func(obj interface{}) {
-				go k2c.handleUpdate(DELETE, obj)
+				go k2c.handleUpdate("services", DELETE, obj)
 			},
 		},
 	)
