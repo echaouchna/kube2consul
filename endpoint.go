@@ -21,20 +21,6 @@ func NewEndpoint(name, address string, port int32, refName string, tags []string
 	return Endpoint{name, address, port, refName, tags}
 }
 
-func getService(ep *v1.Endpoints) *v1.Service {
-	service := &v1.Service{}
-	err := k8sRestClient.Get().
-		Namespace(ep.Namespace).
-		Resource("services").
-		Name(ep.Name).
-		Do().
-		Into(service)
-	if err != nil {
-		return nil
-	}
-	return service
-}
-
 func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map[string][]Endpoint) {
 	var (
 		eps                 []Endpoint
@@ -84,18 +70,23 @@ func (k2c *kube2consul) generateEntries(endpoint *v1.Endpoints) ([]Endpoint, map
 }
 
 func (k2c *kube2consul) updateEndpoints(id int, ep *v1.Endpoints) error {
+	debug("[job: %d] %s >>>>>>>>>>>>>>>>>>>> updateEndpoints", id, ep.Name)
 	endpoints, perServiceEndpoints := k2c.generateEntries(ep)
 
+	debug("[job: %d] %s: perServiceEndpoints : %+v", id, ep.Name, perServiceEndpoints)
 	for _, e := range endpoints {
 		if err := k2c.registerEndpoint(id, e); err != nil {
+			debug("[job: %d] %s <<<<<<<<<<<<<<<<<<<< updateEndpoints", id, ep.Name)
 			return fmt.Errorf("Error updating endpoints %v: %v", ep.Name, err)
 		}
 	}
 
 	for serviceName, e := range perServiceEndpoints {
 		if err := k2c.removeDeletedEndpoints(id, serviceName, e); err != nil {
+			debug("[job: %d] %s <<<<<<<<<<<<<<<<<<<< updateEndpoints", id, ep.Name)
 			return fmt.Errorf("Error removing possible deleted endpoints: %v: %v", serviceName, err)
 		}
 	}
+	debug("[job: %d] %s <<<<<<<<<<<<<<<<<<<< updateEndpoints", id, ep.Name)
 	return nil
 }

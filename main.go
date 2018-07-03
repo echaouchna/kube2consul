@@ -48,6 +48,7 @@ type cliOptions struct {
 	explicit           bool
 	debug              bool
 	excludedNamespaces arrayFlags
+	jobNumber          int
 }
 
 // ActionType holds the name of the action to be executed
@@ -64,6 +65,8 @@ const (
 	Delete ActionType = "delete"
 	// RemoveDNSGarbage remove DNS garbage action name
 	RemoveDNSGarbage ActionType = "removeDNSGarbage"
+	// UpdateService update service metadata
+	UpdateService ActionType = "updateService"
 )
 
 func (actionType ActionType) value() string {
@@ -82,6 +85,7 @@ func init() {
 	flag.BoolVar(&opts.noHealth, "no-health", false, "Disable endpoint /health on port 8080")
 	flag.BoolVar(&opts.explicit, "explicit", false, "Only register containers which have SERVICE_NAME label set")
 	flag.BoolVar(&opts.debug, "debug", false, "Enables debug log mode")
+	flag.IntVar(&opts.jobNumber, "job-number", 0, "The number of parallel jobs")
 	flag.StringVar(&opts.consulTag, "consul-tag", "kube2consul", "Tag setted on services to identify services managed by kube2consul in Consul")
 	flag.Var(&opts.excludedNamespaces, "exclude-namespace", "Exclude a namespace")
 }
@@ -163,17 +167,28 @@ func kubernetesCheck() error {
 func initJobFunctions(k2c kube2consul) map[string]concurrent.JobFunc {
 	actionJobs := make(map[string]concurrent.JobFunc)
 	actionJobs[AddOrUpdate.value()] = func(id int, value interface{}) {
-		endpoint := value.(*v1.Endpoints)
-		if err := k2c.updateEndpoints(id, endpoint); err != nil {
-			glog.Errorf("Error handling update event: %v", err)
+		if endpoints, ok := value.(*v1.Endpoints); ok {
+			if err := k2c.updateEndpoints(id, endpoints); err != nil {
+				glog.Errorf("Error handling update event: %v", err)
+			}
 		}
 	}
 
 	actionJobs[Delete.value()] = func(id int, value interface{}) {
-		service := value.(*v1.Service)
-		perServiceEndpoints := make(map[string][]Endpoint)
-		initPerServiceEndpointsFromService(service, perServiceEndpoints)
-		k2c.removeDeletedServices(id, getStringKeysFromMap(perServiceEndpoints))
+		if service, ok := value.(*v1.Service); ok {
+			perServiceEndpoints := make(map[string][]Endpoint)
+			initPerServiceEndpointsFromService(service, perServiceEndpoints)
+			k2c.removeDeletedServices(id, getStringKeysFromMap(perServiceEndpoints))
+		}
+	}
+
+	actionJobs[UpdateService.value()] = func(id int, value interface{}) {
+		if service, ok := value.(*v1.Service); ok {
+			endpoints := getEndpoints(service)
+			if err := k2c.updateEndpoints(id, endpoints); err != nil {
+				glog.Errorf("Error handling update event: %v", err)
+			}
+		}
 	}
 
 	actionJobs[RemoveDNSGarbage.value()] = func(id int, value interface{}) {
@@ -248,7 +263,7 @@ func main() {
 
 	k2c.endpointsStore = k2c.watchEndpoints(kubeClient)
 
-	stopWorkers := concurrent.RunWorkers(jobQueue, initJobFunctions(k2c))
+	stopWorkers := concurrent.RunWorkers(jobQueue, initJobFunctions(k2c), opts.jobNumber)
 
 	defer stopWorkers()
 
@@ -258,6 +273,8 @@ func main() {
 
 	for {
 		select {
+		case <-time.NewTicker(time.Duration(opts.resyncPeriod) * time.Second).C:
+			go cleanGarbage()
 		case <-lockCh:
 			glog.Fatalf("Lost lock, Exting")
 		case sig := <-sigs:
