@@ -1,5 +1,5 @@
-hash: 02ad36c90925bff267b89cd3b74cc1eb86c6842e5802821542a110bf85dcd65c
-updated: 2018-08-20T16:06:49.371623072+02:00
+hash: 30ac550ec8fbde718826b464c3e8471592ec02c8cc560dabcc46d34eeb75a3d4
+updated: 2018-08-20T16:14:21.538824592+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 783273d703149aaeb9897cf58613d5af48861c25
@@ -38,6 +38,8 @@ imports:
   - ptypes/any
   - ptypes/duration
   - ptypes/timestamp
+- name: github.com/google/btree
+  version: 7d79101e329e5a3adf994758c578dab82b90c017
 - name: github.com/google/gofuzz
   version: 44d81051d367757e1c7c6a5a86423ece9afcf63c
 - name: github.com/googleapis/gnostic
@@ -50,6 +52,10 @@ imports:
   version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
 - name: github.com/gorilla/mux
   version: cb4698366aa625048f3b815af6a0dea8aef9280a
+- name: github.com/gregjones/httpcache
+  version: 787624de3eb7bd915c329cba748687a3b22666a6
+  subpackages:
+  - diskcache
 - name: github.com/hashicorp/consul
   version: 5f3d20c5cfbc2859f0dda44d0c14826f00c4a277
   subpackages:
@@ -68,14 +74,14 @@ imports:
   version: 984a73625de3138f44deb38d00878fab39eb6447
   subpackages:
   - coordinate
-- name: github.com/howeyc/gopass
-  version: bf9dde6d0d2c004a008c27aaee91170c786f6db8
 - name: github.com/imdario/mergo
   version: 6633656539c1639d9d78127b7d47c622b5d7b6dc
 - name: github.com/json-iterator/go
   version: 13f86432b882000a51c6e610c620974462691a97
 - name: github.com/mitchellh/go-homedir
   version: 3864e76763d94a6df2f9960b16a20a33da9f9a66
+- name: github.com/peterbourgon/diskv
+  version: 5f041e8faa004a95c88a202771f4cc3e991971e6
 - name: github.com/sirupsen/logrus
   version: ea8897e79973357ba785ac2533559a6297e83c44
 - name: github.com/spf13/pflag
@@ -83,7 +89,7 @@ imports:
 - name: github.com/vburenin/nsync
   version: 9a75d1c80410815ac45d65fc01ccabac9c98dd4a
 - name: golang.org/x/crypto
-  version: 81e90905daefcd6fd217b62423c0908922eadb30
+  version: 49796115aa4b964c318aad4f3084fdb41e9aa067
   subpackages:
   - ssh/terminal
 - name: golang.org/x/net
@@ -115,7 +121,7 @@ imports:
 - name: gopkg.in/yaml.v2
   version: 670d4cfef0544295bc27a114dbac37980d83185a
 - name: k8s.io/api
-  version: 73d903622b7391f3312dcbac6483fed484e185f8
+  version: 072894a440bdee3a891dea811fe42902311cd2a3
   subpackages:
   - admissionregistration/v1alpha1
   - admissionregistration/v1beta1
@@ -142,6 +148,7 @@ imports:
   - rbac/v1alpha1
   - rbac/v1beta1
   - scheduling/v1alpha1
+  - scheduling/v1beta1
   - settings/v1alpha1
   - storage/v1
   - storage/v1alpha1
@@ -193,7 +200,7 @@ imports:
   - pkg/watch
   - third_party/forked/golang/reflect
 - name: k8s.io/client-go
-  version: 23781f4d6632d88e869066eaebb743857aa1ef9b
+  version: 7d04d0e2a0a1a4d4a1cd6baa432a2301492e4e65
   subpackages:
   - discovery
   - kubernetes
@@ -222,12 +229,14 @@ imports:
   - kubernetes/typed/rbac/v1alpha1
   - kubernetes/typed/rbac/v1beta1
   - kubernetes/typed/scheduling/v1alpha1
+  - kubernetes/typed/scheduling/v1beta1
   - kubernetes/typed/settings/v1alpha1
   - kubernetes/typed/storage/v1
   - kubernetes/typed/storage/v1alpha1
   - kubernetes/typed/storage/v1beta1
   - pkg/apis/clientauthentication
   - pkg/apis/clientauthentication/v1alpha1
+  - pkg/apis/clientauthentication/v1beta1
   - pkg/version
   - plugin/pkg/client/auth/exec
   - rest
@@ -244,6 +253,7 @@ imports:
   - transport
   - util/buffer
   - util/cert
+  - util/connrotation
   - util/flowcontrol
   - util/homedir
   - util/integer
