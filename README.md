@@ -3,6 +3,13 @@ kube2consul
 
 Install
 -------
+### Prerequisites
+
+Before deploying kube2consul, you need to be granted the appropriate admin role on the cluster:
+```
+kubectl create clusterrolebinding <role-admin-binding> --clusterrole=cluster-admin --user=<your@email.com>
+```
+### Install
 
 Get the binary directly from GitHub releases or download the code and compile it with `make`. It requires Go 1.8 or later.
 
