@@ -15,17 +15,20 @@ import (
 	"github.com/golang/glog"
 	"github.com/gorilla/mux"
 	consulapi "github.com/hashicorp/consul/api"
+	"github.com/vburenin/nsync"
 	"k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	kcache "k8s.io/client-go/tools/cache"
 )
 
 var (
-	opts                           cliOptions
-	kube2consulVersion             string
-	lock                           *consulapi.Lock
-	lockCh                         <-chan struct{}
-	jobQueue                       chan concurrent.Action
-	removeDNSGarbageAlreadyRunning = false
+	opts                 cliOptions
+	kube2consulVersion   string
+	lock                 *consulapi.Lock
+	lockCh               <-chan struct{}
+	jobQueue             chan concurrent.Action
+	resyncAlreadyRunning = false
+	nmutex               = nsync.NewNamedMutex()
 )
 
 type arrayFlags []string
@@ -64,8 +67,6 @@ const (
 	AddOrUpdate ActionType = "addOrUpdate"
 	// Delete delete action name
 	Delete ActionType = "delete"
-	// RemoveDNSGarbage remove DNS garbage action name
-	RemoveDNSGarbage ActionType = "removeDNSGarbage"
 	// UpdateService update service metadata
 	UpdateService ActionType = "updateService"
 )
@@ -109,21 +110,20 @@ func inSlice(value string, slice []string) bool {
 	return false
 }
 
-func (k2c *kube2consul) RemoveDNSGarbage(id int) {
-	for {
-		if len(k2c.endpointsStore.List()) > 0 {
-			break
-		}
-		time.Sleep(time.Second * time.Duration(opts.resyncPeriod))
-	}
+func (k2c *kube2consul) resync(id int, kubeClient kubernetes.Interface) {
+	epSet := make(map[string]bool)
+	perServiceEndpoints := make(map[string][]Endpoint)
 
-	epSet := make(map[string]struct{})
+	glog.Infof("[job: %d] resync", id)
 
-	for _, obj := range k2c.endpointsStore.List() {
-		if ep, ok := obj.(*v1.Endpoints); ok {
-			generatedEndpoints, _ := k2c.generateEntries(ep)
-			for _, generatedEndpoint := range generatedEndpoints {
-				epSet[generatedEndpoint.Name] = struct{}{}
+	glog.V(2).Infof("##> k8s services :")
+	allEndpoints, err := k2c.getAllEndpoints(kubeClient)
+	for _, ep := range allEndpoints.Items {
+		if !stringInSlice(ep.Namespace, opts.excludedNamespaces) {
+			_, perServiceEndpoints = k2c.generateEntries(id, &ep)
+			for name := range perServiceEndpoints {
+				glog.V(2).Infof("--> %s", name)
+				epSet[name] = false
 			}
 		}
 	}
@@ -134,18 +134,43 @@ func (k2c *kube2consul) RemoveDNSGarbage(id int) {
 		return
 	}
 
+	glog.V(2).Infof("##> consul services :")
 	for name, tags := range services {
 		if !inSlice(opts.consulTag, tags) {
 			continue
 		}
+		glog.V(2).Infof("--> %s", name)
 
 		if _, ok := epSet[name]; !ok {
 			err = k2c.removeDeletedEndpoints(id, name, []Endpoint{})
 			if err != nil {
 				glog.Errorf("[job: %d] Error removing DNS garbage: %v", id, err)
 			}
+		} else {
+			epSet[name] = true
+			for _, e := range perServiceEndpoints[name] {
+				if err := k2c.registerEndpoint(id, e); err != nil {
+					glog.Errorf("[job: %d] Error updating endpoints %v: %v", id, e.Name, err)
+				}
+			}
+			err = k2c.removeDeletedEndpoints(id, name, perServiceEndpoints[name])
+			if err != nil {
+				glog.Errorf("[job: %d] Error removing DNS garbage: %v", id, err)
+			}
 		}
 	}
+
+	for name, found := range epSet {
+		if !found {
+			for _, e := range perServiceEndpoints[name] {
+				if err := k2c.registerEndpoint(id, e); err != nil {
+					glog.Errorf("[job: %d] Error updating endpoints %v: %v", id, e.Name, err)
+				}
+			}
+		}
+	}
+
+	glog.Infof("[job: %d] resync done", id)
 }
 
 func consulCheck() error {
@@ -169,6 +194,8 @@ func initJobFunctions(k2c kube2consul) map[string]concurrent.JobFunc {
 	actionJobs := make(map[string]concurrent.JobFunc)
 	actionJobs[AddOrUpdate.value()] = func(id int, value interface{}) {
 		if endpoints, ok := value.(*v1.Endpoints); ok {
+			nmutex.Lock(endpoints.Name)
+			defer nmutex.Unlock(endpoints.Name)
 			if err := k2c.updateEndpoints(id, endpoints); err != nil {
 				glog.Errorf("Error handling update event: %v", err)
 			}
@@ -177,6 +204,8 @@ func initJobFunctions(k2c kube2consul) map[string]concurrent.JobFunc {
 
 	actionJobs[Delete.value()] = func(id int, value interface{}) {
 		if service, ok := value.(*v1.Service); ok {
+			nmutex.Lock(service.Name)
+			defer nmutex.Unlock(service.Name)
 			perServiceEndpoints := make(map[string][]Endpoint)
 			initPerServiceEndpointsFromService(service, perServiceEndpoints)
 			k2c.removeDeletedServices(id, getStringKeysFromMap(perServiceEndpoints))
@@ -185,16 +214,13 @@ func initJobFunctions(k2c kube2consul) map[string]concurrent.JobFunc {
 
 	actionJobs[UpdateService.value()] = func(id int, value interface{}) {
 		if service, ok := value.(*v1.Service); ok {
+			nmutex.Lock(service.Name)
+			defer nmutex.Unlock(service.Name)
 			endpoints := getEndpoints(service)
 			if err := k2c.updateEndpoints(id, endpoints); err != nil {
 				glog.Errorf("Error handling update event: %v", err)
 			}
 		}
-	}
-
-	actionJobs[RemoveDNSGarbage.value()] = func(id int, value interface{}) {
-		k2c.RemoveDNSGarbage(id)
-		removeDNSGarbageAlreadyRunning = false
 	}
 	return actionJobs
 }
@@ -265,20 +291,23 @@ func main() {
 
 	k2c.endpointsStore = k2c.watchEndpoints(kubeClient)
 
-	stopWorkers := concurrent.RunWorkers(jobQueue, initJobFunctions(k2c), opts.jobNumber)
+	_, _, stopWorkers := concurrent.RunWorkers(jobQueue, initJobFunctions(k2c), opts.jobNumber)
 
 	defer stopWorkers()
 
 	// Handle SIGINT and SIGTERM.
-	sigs := make(chan os.Signal)
+	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
 	for {
 		select {
 		case <-time.NewTicker(time.Duration(opts.resyncPeriod) * time.Second).C:
-			if !removeDNSGarbageAlreadyRunning {
-				removeDNSGarbageAlreadyRunning = true
-				go cleanGarbage()
+			if !resyncAlreadyRunning {
+				resyncAlreadyRunning = true
+				go func() {
+					k2c.resync(0, kubeClient)
+					resyncAlreadyRunning = false
+				}()
 			}
 		case <-lockCh:
 			glog.Fatalf("Lost lock, Exting")

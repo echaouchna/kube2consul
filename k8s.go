@@ -7,6 +7,7 @@ import (
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	kapi "k8s.io/api/core/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -102,6 +103,10 @@ func createListWatcher(kubeClient kubernetes.Interface, resourceType string) *kc
 	return kcache.NewListWatchFromClient(k8sRestClient, resourceType, kapi.NamespaceAll, fields.Everything())
 }
 
+func (k2c *kube2consul) getAllEndpoints(kubeClient kubernetes.Interface) (*v1.EndpointsList, error) {
+	return kubeClient.CoreV1().Endpoints("").List(meta_v1.ListOptions{})
+}
+
 func (k2c *kube2consul) handleUpdate(resourceType string, actionType ActionType, obj interface{}) {
 	var action concurrent.Action
 	switch resourceType {
@@ -125,10 +130,6 @@ func (k2c *kube2consul) handleUpdate(resourceType string, actionType ActionType,
 	jobQueue <- action
 }
 
-func cleanGarbage() {
-	jobQueue <- concurrent.Action{Name: RemoveDNSGarbage.value(), Data: nil}
-}
-
 func (k2c *kube2consul) watchEndpoints(kubeClient kubernetes.Interface) kcache.Store {
 	eStore, eController := kcache.NewInformer(
 		createListWatcher(kubeClient, "endpoints"),
@@ -136,10 +137,10 @@ func (k2c *kube2consul) watchEndpoints(kubeClient kubernetes.Interface) kcache.S
 		0,
 		kcache.ResourceEventHandlerFuncs{
 			AddFunc: func(newObj interface{}) {
-				go k2c.handleUpdate("endpoints", AddOrUpdate, newObj)
+				k2c.handleUpdate("endpoints", AddOrUpdate, newObj)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				go k2c.handleUpdate("endpoints", AddOrUpdate, newObj)
+				k2c.handleUpdate("endpoints", AddOrUpdate, newObj)
 			},
 		},
 	)
@@ -150,10 +151,10 @@ func (k2c *kube2consul) watchEndpoints(kubeClient kubernetes.Interface) kcache.S
 		0,
 		kcache.ResourceEventHandlerFuncs{
 			DeleteFunc: func(obj interface{}) {
-				go k2c.handleUpdate("services", Delete, obj)
+				k2c.handleUpdate("services", Delete, obj)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				go k2c.handleUpdate("services", UpdateService, newObj)
+				k2c.handleUpdate("services", UpdateService, newObj)
 			},
 		},
 	)

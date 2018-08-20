@@ -1,5 +1,5 @@
 hash: 02ad36c90925bff267b89cd3b74cc1eb86c6842e5802821542a110bf85dcd65c
-updated: 2018-07-03T16:28:40.59257362+02:00
+updated: 2018-08-20T16:06:49.371623072+02:00
 imports:
 - name: github.com/armon/go-metrics
   version: 783273d703149aaeb9897cf58613d5af48861c25
@@ -20,7 +20,7 @@ imports:
 - name: github.com/docker/go-healthcheck
   version: a4f20681d8a1929b947920b5dfe2d16809d815ca
 - name: github.com/echaouchna/go-threadpool
-  version: 68f96fc9f8dfe5ae09683bf9b3cde0ffc77c2031
+  version: d8068c5138e4cb8a4b14a5cca07e8dc7c5310e8d
 - name: github.com/ghodss/yaml
   version: 73d445a93680fa1a78ae23a5839bad48f32ba1ee
 - name: github.com/gogo/protobuf
@@ -80,6 +80,8 @@ imports:
   version: ea8897e79973357ba785ac2533559a6297e83c44
 - name: github.com/spf13/pflag
   version: 4c012f6dcd9546820e378d0bdda4d8fc772cdfea
+- name: github.com/vburenin/nsync
+  version: 9a75d1c80410815ac45d65fc01ccabac9c98dd4a
 - name: golang.org/x/crypto
   version: 81e90905daefcd6fd217b62423c0908922eadb30
   subpackages:
