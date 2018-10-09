@@ -6,3 +6,5 @@ import:
   version: v4.0.0
 - package: github.com/davecgh/go-spew
   version: v1.1.0
+- package: github.com/json-iterator/go
+  version: v1.1.5
